@@ -1,0 +1,1292 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<title>Ladefuchs – E-Auto Lade Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<style>
+:root {
+  --bg: #0d0d0d;
+  --surface: #161616;
+  --surface-high: #1e1e1e;
+  --surface-highest: #2a2a2a;
+  --border: rgba(255,255,255,0.06);
+  --border-focus: rgba(232,25,34,0.4);
+  --text: #ededed;
+  --text-secondary: #8a8a8a;
+  --text-muted: #555;
+  --primary: #E81922;
+  --primary-dim: rgba(232,25,34,0.15);
+  --green: #34d058;
+  --green-dim: rgba(52,208,88,0.12);
+  --blue: #58a6ff;
+  --amber: #f0b429;
+  --radius: 16px;
+  --radius-sm: 10px;
+  --nav-height: 72px;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', -apple-system, sans-serif;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+body { padding-bottom: calc(var(--nav-height) + 32px); }
+
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+/* --- HEADER --- */
+header {
+  position: sticky; top: 0; z-index: 100;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px;
+  background: rgba(13,13,13,0.85);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-bottom: 1px solid var(--border);
+}
+.logo { display:flex; align-items:center; gap:10px; }
+.logo-icon {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: var(--primary); display:flex; align-items:center; justify-content:center;
+  font-family:'Manrope'; font-weight:800; font-size:16px; color:#fff;
+}
+.logo-text { font-family:'Manrope'; font-weight:800; font-size:20px; color:var(--primary); letter-spacing:-0.5px; }
+
+header button {
+  background:none; border:none; color:var(--text-secondary); cursor:pointer;
+  width:40px; height:40px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  transition: background 0.2s;
+}
+header button:hover { background: var(--surface-high); }
+
+/* --- MAIN --- */
+main { padding: 0 20px; max-width: 480px; margin: 0 auto; }
+
+.page { display:none; animation: fadeUp 0.35s ease; }
+.page.active { display:block; }
+
+@keyframes fadeUp {
+  from { opacity:0; transform:translateY(12px); }
+  to { opacity:1; transform:translateY(0); }
+}
+
+/* --- DASHBOARD --- */
+.dash-hero { padding: 28px 0 8px; }
+.dash-label { font-size:12px; font-weight:600; color:var(--text-secondary); text-transform:uppercase; letter-spacing:1.5px; margin-bottom:4px; }
+.dash-amount {
+  font-family:'Manrope'; font-weight:800; font-size:56px; letter-spacing:-3px;
+  line-height:1; color:var(--text);
+}
+.dash-amount .currency { color:var(--primary); font-size:36px; margin-left:2px; }
+
+.dash-stats {
+  display:grid; grid-template-columns:1fr 1fr; gap:12px;
+  margin: 20px 0;
+}
+.stat-card {
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  border: 1px solid var(--border);
+}
+.stat-card .stat-label { font-size:10px; font-weight:600; color:var(--text-secondary); text-transform:uppercase; letter-spacing:1px; }
+.stat-card .stat-value { font-family:'Manrope'; font-weight:700; font-size:22px; margin-top:4px; }
+.stat-card .stat-unit { font-size:13px; color:var(--text-secondary); font-weight:500; }
+
+.section-title {
+  font-family:'Manrope'; font-weight:700; font-size:16px;
+  margin: 28px 0 12px; color:var(--text);
+}
+
+/* Chart */
+.chart-container {
+  background: var(--surface);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  padding: 20px;
+  margin-bottom: 16px;
+  position: relative;
+}
+.chart-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
+.chart-header .badge {
+  font-size:11px; font-weight:600; padding:4px 10px;
+  border-radius:20px; background:var(--green-dim); color:var(--green);
+}
+.chart-canvas { width:100%; height:140px; }
+.chart-labels { display:flex; justify-content:space-between; margin-top:8px; }
+.chart-labels span { font-size:10px; color:var(--text-muted); }
+
+/* Last charge card */
+.last-charge {
+  background: var(--surface);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+.lc-row { display:flex; justify-content:space-between; align-items:center; }
+.lc-info { display:flex; align-items:center; gap:12px; }
+.lc-icon {
+  width:40px; height:40px; border-radius:10px;
+  background:var(--primary-dim); display:flex; align-items:center; justify-content:center;
+  color:var(--primary);
+}
+.lc-details .lc-title { font-weight:600; font-size:14px; }
+.lc-details .lc-sub { font-size:11px; color:var(--text-secondary); margin-top:2px; }
+.lc-cost { text-align:right; }
+.lc-cost .amount { font-family:'Manrope'; font-weight:700; font-size:18px; }
+.lc-cost .kwh { font-size:11px; color:var(--green); margin-top:2px; }
+.lc-meta { display:flex; gap:8px; margin-top:12px; }
+.lc-meta .tag {
+  flex:1; background:var(--surface-high); border-radius:8px; padding:8px 12px;
+  font-size:10px; text-transform:uppercase; letter-spacing:0.5px;
+}
+.lc-meta .tag .tag-label { color:var(--text-secondary); }
+.lc-meta .tag .tag-value { font-weight:600; margin-top:2px; font-size:12px; }
+
+.empty-state {
+  text-align:center; padding:48px 20px;
+  color:var(--text-secondary); font-size:14px;
+}
+.empty-state .material-symbols-outlined { font-size:48px; opacity:0.3; display:block; margin-bottom:12px; }
+
+/* Period selector */
+.period-selector {
+  display:flex; gap:4px; background:var(--surface); border-radius:10px;
+  padding:3px; margin-bottom:20px; border:1px solid var(--border);
+}
+.period-btn {
+  flex:1; padding:8px; border:none; border-radius:8px;
+  font-family:'Inter'; font-size:12px; font-weight:600;
+  background:none; color:var(--text-secondary); cursor:pointer;
+  transition: all 0.2s;
+}
+.period-btn.active { background:var(--surface-highest); color:var(--text); }
+
+/* --- ADD CHARGE --- */
+.page-title-area { padding: 24px 0 8px; }
+.page-tag { font-size:11px; font-weight:700; color:var(--green); text-transform:uppercase; letter-spacing:2px; margin-bottom:6px; }
+.page-title { font-family:'Manrope'; font-weight:800; font-size:32px; letter-spacing:-1px; }
+.page-subtitle { font-size:13px; color:var(--text-secondary); margin-top:4px; }
+
+.hero-input-group { margin:28px 0 20px; }
+.hero-input-group label {
+  display:block; font-size:10px; font-weight:600; text-transform:uppercase;
+  letter-spacing:1.5px; color:var(--text-secondary); margin-bottom:6px;
+}
+.hero-input-row {
+  display:flex; align-items:baseline; gap:8px;
+  border-bottom:2px solid var(--surface-highest);
+  padding-bottom:8px;
+  transition: border-color 0.2s;
+}
+.hero-input-row:focus-within { border-color:var(--primary); }
+.hero-input {
+  background:none; border:none; outline:none;
+  font-family:'Manrope'; font-weight:800; font-size:52px;
+  color:var(--text); width:100%;
+  -moz-appearance: textfield;
+}
+.hero-input::placeholder { color:var(--surface-highest); }
+.hero-input::-webkit-outer-spin-button,
+.hero-input::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+.hero-unit { font-family:'Manrope'; font-weight:700; font-size:22px; color:var(--primary); white-space:nowrap; }
+
+.input-card {
+  background:var(--surface);
+  border-radius:var(--radius);
+  border:1px solid var(--border);
+  padding:16px;
+  display:flex; align-items:center; gap:12px;
+  margin-bottom:12px;
+  transition: border-color 0.2s;
+}
+.input-card:focus-within { border-color:var(--border-focus); }
+.input-card .ic-icon { color:var(--text-secondary); flex-shrink:0; }
+.input-card input {
+  background:none; border:none; outline:none;
+  font-family:'Inter'; font-weight:500; font-size:16px;
+  color:var(--text); width:100%;
+  -moz-appearance: textfield;
+}
+.input-card input::placeholder { color:var(--text-muted); }
+.input-card input::-webkit-outer-spin-button,
+.input-card input::-webkit-inner-spin-button { -webkit-appearance:none; }
+.input-card .ic-unit { font-size:12px; color:var(--text-secondary); font-weight:500; white-space:nowrap; }
+
+.input-label {
+  display:block; font-size:10px; font-weight:600; text-transform:uppercase;
+  letter-spacing:1.5px; color:var(--text-secondary); margin:20px 0 8px;
+}
+
+/* Tariff info */
+.tariff-info {
+  background: var(--surface);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  padding: 16px;
+  margin: 20px 0;
+}
+.tariff-info summary {
+  cursor:pointer; font-size:12px; font-weight:600; color:var(--text-secondary);
+  display:flex; align-items:center; gap:8px; list-style:none;
+}
+.tariff-info summary::-webkit-details-marker { display:none; }
+.tariff-info[open] summary .arrow { transform:rotate(90deg); }
+.tariff-info .arrow { transition:transform 0.2s; font-size:16px; }
+.tariff-detail { margin-top:12px; font-size:12px; color:var(--text-secondary); line-height:1.7; }
+.tariff-detail .td-row { display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid var(--border); }
+.tariff-detail .td-row:last-child { border:none; }
+.tariff-detail .td-label { }
+.tariff-detail .td-value { font-weight:600; color:var(--text); font-variant-numeric:tabular-nums; }
+
+/* Result card */
+.result-card {
+  background: linear-gradient(135deg, var(--surface-high), var(--surface));
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  padding: 20px;
+  margin: 24px 0;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+}
+.rc-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+.rc-label { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:1.5px; color:var(--text-secondary); }
+.rc-dot { width:8px; height:8px; border-radius:50%; background:var(--green); box-shadow:0 0 8px rgba(52,208,88,0.5); }
+.rc-amount { font-family:'Manrope'; font-weight:800; font-size:36px; }
+.rc-amount .curr { color:var(--primary); font-size:24px; margin-left:2px; }
+.rc-breakdown { margin-top:16px; padding-top:12px; border-top:1px solid var(--border); }
+.rc-breakdown .rb-row { display:flex; justify-content:space-between; font-size:12px; color:var(--text-secondary); padding:3px 0; }
+.rc-breakdown .rb-row .rb-val { color:var(--text); font-weight:500; font-variant-numeric:tabular-nums; }
+.rc-breakdown .rb-total { color:var(--text) !important; font-weight:700 !important; margin-top:4px; padding-top:6px; border-top:1px solid var(--border); }
+.rc-note { font-size:10px; color:var(--text-muted); margin-top:12px; line-height:1.5; }
+
+/* Date input */
+.date-input-wrap {
+  margin: 12px 0;
+}
+
+/* Save button */
+.btn-save {
+  width:100%; padding:18px; border:none; border-radius:50px;
+  background:var(--primary); color:#fff;
+  font-family:'Manrope'; font-weight:700; font-size:16px;
+  cursor:pointer; transition: all 0.2s;
+  box-shadow: 0 4px 20px rgba(232,25,34,0.25);
+  margin-top: 8px;
+}
+.btn-save:active { transform:scale(0.97); }
+.btn-save:disabled { opacity:0.4; cursor:not-allowed; }
+
+/* Toast */
+.toast {
+  position:fixed; top:80px; left:50%; transform:translateX(-50%) translateY(-20px);
+  background:var(--green); color:#000; padding:12px 24px;
+  border-radius:50px; font-weight:600; font-size:13px;
+  opacity:0; transition: all 0.3s; z-index:200; pointer-events:none;
+  box-shadow: 0 4px 20px rgba(52,208,88,0.3);
+}
+.toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+
+/* --- IMPORT --- */
+.drop-zone {
+  border:2px dashed rgba(232,25,34,0.3);
+  border-radius:var(--radius);
+  padding:40px 20px;
+  text-align:center;
+  background:var(--primary-dim);
+  transition: all 0.3s;
+  cursor:pointer;
+  margin-bottom:20px;
+}
+.drop-zone:hover, .drop-zone.drag-over {
+  border-color:var(--primary);
+  background:rgba(232,25,34,0.12);
+}
+.drop-zone .dz-icon { font-size:40px; color:var(--primary); margin-bottom:12px; }
+.drop-zone .dz-text { font-size:14px; color:var(--text-secondary); margin-bottom:16px; }
+.drop-zone .dz-btn {
+  display:inline-block; padding:10px 24px; border-radius:50px;
+  background:var(--primary); color:#fff; font-weight:600; font-size:13px;
+  border:none; cursor:pointer;
+}
+.drop-zone input[type="file"] { display:none; }
+
+.import-result {
+  background:var(--surface); border-radius:var(--radius);
+  border:1px solid var(--border); padding:16px; margin:12px 0;
+}
+.ir-row { display:flex; justify-content:space-between; font-size:13px; padding:4px 0; }
+.ir-row .ir-val { font-weight:600; color:var(--green); }
+
+/* History list */
+.history-item-wrap {
+  position:relative; overflow:hidden;
+  border-bottom:1px solid var(--border);
+}
+.history-item-wrap:last-child { border:none; }
+
+/* Swipe delete background */
+.hi-delete-bg {
+  position:absolute; top:0; right:0; bottom:0; width:100px;
+  background:var(--primary); display:flex; align-items:center; justify-content:center;
+  color:#fff; font-size:13px; font-weight:600; gap:4px;
+  z-index:1;
+}
+
+.history-item {
+  position:relative; z-index:2;
+  display:flex; justify-content:space-between; align-items:center;
+  padding:14px 0;
+  background:var(--bg);
+  transition: transform 0.3s ease;
+  touch-action: pan-y;
+}
+.history-item.swiped { transform:translateX(-100px); }
+.history-item.deleting {
+  transform:translateX(-120%);
+  opacity:0;
+  max-height:0;
+  padding:0;
+  transition: all 0.35s ease;
+}
+
+.hi-left { display:flex; align-items:center; gap:12px; flex:1; min-width:0; }
+.hi-dot { width:6px; height:6px; border-radius:50%; background:var(--primary); flex-shrink:0; }
+.hi-date { font-size:12px; color:var(--text-secondary); }
+.hi-kwh { font-size:14px; font-weight:600; }
+.hi-right { text-align:right; flex-shrink:0; }
+.hi-cost { font-family:'Manrope'; font-weight:700; font-size:15px; }
+.hi-rate { font-size:11px; color:var(--text-secondary); }
+
+.hi-actions { display:flex; gap:4px; margin-left:10px; flex-shrink:0; }
+.hi-del {
+  background:var(--primary-dim); border:none; color:var(--primary); cursor:pointer;
+  width:36px; height:36px; border-radius:10px; display:flex; align-items:center; justify-content:center;
+  transition: all 0.2s;
+}
+.hi-del:hover { background:var(--primary); color:#fff; }
+.hi-del:active { transform:scale(0.9); }
+
+/* Confirm delete modal */
+.confirm-overlay {
+  display:none; position:fixed; inset:0; background:rgba(0,0,0,0.75);
+  z-index:400; align-items:center; justify-content:center;
+  backdrop-filter:blur(6px);
+}
+.confirm-overlay.show { display:flex; }
+.confirm-box {
+  background:var(--surface-high); border-radius:20px;
+  padding:28px 24px; max-width:320px; width:90%;
+  text-align:center; animation: fadeUp 0.25s ease;
+}
+.confirm-box h4 { font-family:'Manrope'; font-weight:700; font-size:18px; margin-bottom:8px; }
+.confirm-box p { font-size:13px; color:var(--text-secondary); margin-bottom:20px; line-height:1.5; }
+.confirm-btns { display:flex; gap:10px; }
+.confirm-btns button {
+  flex:1; padding:14px; border:none; border-radius:12px;
+  font-family:'Inter'; font-weight:600; font-size:14px; cursor:pointer;
+  transition: all 0.15s;
+}
+.confirm-btns .btn-cancel { background:var(--surface-highest); color:var(--text); }
+.confirm-btns .btn-cancel:hover { background:var(--surface); }
+.confirm-btns .btn-confirm-del { background:var(--primary); color:#fff; }
+.confirm-btns .btn-confirm-del:active { transform:scale(0.96); }
+
+/* --- SETTINGS MODAL --- */
+.modal-overlay {
+  display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7);
+  z-index:300; align-items:flex-end; justify-content:center;
+  backdrop-filter:blur(4px);
+}
+.modal-overlay.show { display:flex; }
+.modal {
+  background:var(--surface-high); border-radius:20px 20px 0 0;
+  width:100%; max-width:480px; padding:24px 20px 40px;
+  max-height:80vh; overflow-y:auto;
+  animation: slideUp 0.3s ease;
+}
+@keyframes slideUp {
+  from { transform:translateY(100%); }
+  to { transform:translateY(0); }
+}
+.modal-handle { width:36px; height:4px; background:var(--text-muted); border-radius:2px; margin:0 auto 20px; }
+.modal h3 { font-family:'Manrope'; font-weight:700; font-size:20px; margin-bottom:20px; }
+.setting-row { display:flex; justify-content:space-between; align-items:center; padding:14px 0; border-bottom:1px solid var(--border); }
+.setting-row:last-child { border:none; }
+.setting-label { font-size:14px; }
+.setting-label small { display:block; font-size:11px; color:var(--text-secondary); margin-top:2px; }
+.setting-input input {
+  background:var(--surface); border:1px solid var(--border); border-radius:8px;
+  padding:8px 12px; color:var(--text); font-size:14px; width:100px; text-align:right;
+  font-family:'Inter'; outline:none;
+}
+.setting-input input:focus { border-color:var(--border-focus); }
+.btn-danger {
+  width:100%; padding:14px; border:none; border-radius:12px;
+  background:rgba(232,25,34,0.1); color:var(--primary);
+  font-weight:600; font-size:14px; cursor:pointer; margin-top:16px;
+  transition:background 0.2s;
+}
+.btn-danger:hover { background:rgba(232,25,34,0.2); }
+
+/* --- BOTTOM NAV --- */
+nav {
+  position:fixed; bottom:0; left:0; right:0; z-index:100;
+  display:flex; justify-content:space-around; align-items:center;
+  height:var(--nav-height);
+  background:rgba(22,22,22,0.85);
+  backdrop-filter:blur(24px);
+  -webkit-backdrop-filter:blur(24px);
+  border-top:1px solid var(--border);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+.nav-item {
+  display:flex; flex-direction:column; align-items:center; gap:3px;
+  color:var(--text-muted); text-decoration:none;
+  font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px;
+  cursor:pointer; padding:8px 16px;
+  transition: color 0.2s; background:none; border:none;
+  font-family:'Inter';
+}
+.nav-item.active { color:var(--primary); }
+.nav-item.active .material-symbols-outlined { font-variation-settings: 'FILL' 1, 'wght' 400; }
+
+/* SVG chart */
+.svg-chart { width:100%; overflow:visible; }
+.chart-line { fill:none; stroke:var(--primary); stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+.chart-area { fill:url(#chartGrad); }
+.chart-dot { fill:var(--primary); }
+</style>
+</head>
+<body>
+
+<div class="toast" id="toast"></div>
+
+<!-- HEADER -->
+<header>
+  <div class="logo">
+    <div class="logo-icon">🦊</div>
+    <span class="logo-text">Ladefuchs</span>
+  </div>
+  <button onclick="toggleSettings()" aria-label="Einstellungen">
+    <span class="material-symbols-outlined">settings</span>
+  </button>
+</header>
+
+<!-- MAIN CONTENT -->
+<main>
+
+  <!-- ==================== DASHBOARD ==================== -->
+  <div class="page active" id="page-dashboard">
+    <div class="dash-hero">
+      <div class="dash-label" id="dash-period-label">Dieser Monat</div>
+      <div class="dash-amount"><span id="dash-total">0,00</span><span class="currency"> €</span></div>
+    </div>
+
+    <div class="period-selector">
+      <button class="period-btn active" onclick="setPeriod('month',this)">Monat</button>
+      <button class="period-btn" onclick="setPeriod('year',this)">Jahr</button>
+      <button class="period-btn" onclick="setPeriod('all',this)">Gesamt</button>
+    </div>
+
+    <div class="dash-stats">
+      <div class="stat-card">
+        <div class="stat-label">Energie</div>
+        <div class="stat-value"><span id="dash-kwh">0</span> <span class="stat-unit">kWh</span></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Ø Preis</div>
+        <div class="stat-value"><span id="dash-avg">0,00</span> <span class="stat-unit">€/kWh</span></div>
+      </div>
+    </div>
+
+    <div class="section-title">Verlauf</div>
+    <div class="chart-container">
+      <div class="chart-header">
+        <span style="font-size:12px;color:var(--text-secondary)">Kosten / Tag</span>
+        <span class="badge" id="chart-badge"></span>
+      </div>
+      <div id="chart-area" style="height:140px;position:relative;">
+        <svg class="svg-chart" id="svg-chart" viewBox="0 0 400 120" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="chartGrad" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stop-color="var(--primary)" stop-opacity="0.3"/>
+              <stop offset="100%" stop-color="var(--primary)" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+          <path class="chart-area" id="chart-area-path"/>
+          <path class="chart-line" id="chart-line-path"/>
+        </svg>
+      </div>
+      <div class="chart-labels" id="chart-labels"></div>
+    </div>
+
+    <div class="section-title">Letzte Ladung</div>
+    <div id="last-charge-area"></div>
+
+    <div class="section-title">Alle Einträge</div>
+    <div id="history-list"></div>
+  </div>
+
+  <!-- ==================== ADD CHARGE ==================== -->
+  <div class="page" id="page-add">
+    <div class="page-title-area">
+      <div class="page-tag">Neuer Eintrag</div>
+      <div class="page-title">Ladevorgang</div>
+      <div class="page-subtitle">Erfasse deine Ladekosten inkl. aller Wiener Abgaben.</div>
+    </div>
+
+    <div class="hero-input-group">
+      <label>Geladene Energie</label>
+      <div class="hero-input-row">
+        <input class="hero-input" type="number" id="inp-kwh" placeholder="0.0" step="0.1" min="0" inputmode="decimal"/>
+        <span class="hero-unit">kWh</span>
+      </div>
+    </div>
+
+    <label class="input-label">Energiepreis (netto, lt. Tarif)</label>
+    <div class="input-card">
+      <span class="material-symbols-outlined ic-icon">euro_symbol</span>
+      <input type="number" id="inp-energy" placeholder="0,1200" step="0.0001" min="0" inputmode="decimal"/>
+      <span class="ic-unit">€/kWh</span>
+    </div>
+
+    <label class="input-label">Datum</label>
+    <div class="input-card date-input-wrap">
+      <span class="material-symbols-outlined ic-icon">calendar_today</span>
+      <input type="date" id="inp-date" style="color:var(--text);font-family:Inter;font-size:14px;"/>
+    </div>
+
+    <details class="tariff-info">
+      <summary>
+        <span class="material-symbols-outlined arrow" style="font-size:16px;">chevron_right</span>
+        Wien Netzentgelte & Abgaben 2026 (automatisch berechnet)
+      </summary>
+      <div class="tariff-detail" id="tariff-breakdown">
+        <!-- filled by JS -->
+      </div>
+    </details>
+
+    <div class="result-card">
+      <div class="rc-header">
+        <span class="rc-label">Geschätzte Gesamtkosten</span>
+        <div class="rc-dot"></div>
+      </div>
+      <div class="rc-amount"><span id="rc-total">0,00</span><span class="curr"> €</span></div>
+      <div class="rc-breakdown" id="rc-breakdown"></div>
+      <div class="rc-note">
+        Berechnet: kWh × (Energiepreis + Netznutzung + Netzverlust) × Gebrauchsabgabe + Förderbeitrag + E-Abgabe → × USt. Verifiziert gegen Wien Energie Jahresabrechnung 2026.
+      </div>
+    </div>
+
+    <button class="btn-save" id="btn-save" onclick="saveCharge()" disabled>Speichern</button>
+  </div>
+
+  <!-- ==================== IMPORT ==================== -->
+  <div class="page" id="page-import">
+    <div class="page-title-area">
+      <div class="page-title">CSV Import</div>
+      <div class="page-subtitle">Importiere Ladevorgänge aus einer CSV-Datei.</div>
+    </div>
+
+    <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+      <span class="material-symbols-outlined dz-icon">upload_file</span>
+      <div class="dz-text">Ziehe eine CSV-Datei hierher oder klicke zum Durchsuchen.</div>
+      <span class="dz-btn">Datei auswählen</span>
+      <input type="file" id="file-input" accept=".csv,.json"/>
+    </div>
+
+    <div id="import-result"></div>
+
+    <div style="margin-top:24px;">
+      <div class="section-title">Erwartetes Format (CSV)</div>
+      <div style="background:var(--surface);border-radius:var(--radius-sm);padding:14px;font-size:12px;color:var(--text-secondary);font-family:monospace;line-height:1.8;border:1px solid var(--border);">
+        date,kwh,energy_price<br>
+        2026-03-20,18.5,0.12<br>
+        2026-03-22,22.1,0.10<br>
+      </div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:8px;line-height:1.5;">
+        <b>date</b>: Datum (YYYY-MM-DD)<br>
+        <b>kwh</b>: Geladene Energie in kWh<br>
+        <b>energy_price</b>: Netto-Energiepreis in €/kWh<br>
+        Netzentgelte werden automatisch berechnet.
+      </div>
+    </div>
+
+    <div style="margin-top:24px;">
+      <div class="section-title">Daten exportieren</div>
+      <button class="btn-danger" onclick="exportData()" style="background:var(--surface);color:var(--text);border:1px solid var(--border);">
+        📥 Als JSON exportieren
+      </button>
+    </div>
+  </div>
+
+</main>
+
+<!-- BOTTOM NAV -->
+<nav>
+  <button class="nav-item active" onclick="showPage('dashboard',this)" data-page="dashboard">
+    <span class="material-symbols-outlined">dashboard</span>
+    <span>Übersicht</span>
+  </button>
+  <button class="nav-item" onclick="showPage('import',this)" data-page="import">
+    <span class="material-symbols-outlined">upload_file</span>
+    <span>Import</span>
+  </button>
+  <button class="nav-item" onclick="showPage('add',this)" data-page="add">
+    <span class="material-symbols-outlined">add_circle</span>
+    <span>Hinzufügen</span>
+  </button>
+</nav>
+
+<!-- CONFIRM DELETE DIALOG -->
+<div class="confirm-overlay" id="confirm-delete" onclick="if(event.target===this)cancelDelete()">
+  <div class="confirm-box">
+    <h4>Eintrag löschen?</h4>
+    <p id="confirm-detail">Dieser Ladevorgang wird unwiderruflich gelöscht.</p>
+    <div class="confirm-btns">
+      <button class="btn-cancel" onclick="cancelDelete()">Abbrechen</button>
+      <button class="btn-confirm-del" onclick="confirmDelete()">Löschen</button>
+    </div>
+  </div>
+</div>
+
+<!-- SETTINGS MODAL -->
+<div class="modal-overlay" id="settings-modal" onclick="if(event.target===this)toggleSettings()">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <h3>Einstellungen</h3>
+    <div class="setting-row">
+      <div class="setting-label">Standard-Energiepreis<small>Netto €/kWh</small></div>
+      <div class="setting-input"><input type="number" id="set-energy" step="0.0001" inputmode="decimal"/></div>
+    </div>
+    <div class="setting-row">
+      <div class="setting-label">Gebrauchsabgabe<small>% v. Energie+Netzpreis (ab 1.3.2026: 7%)</small></div>
+      <div class="setting-input"><input type="number" id="set-gab" step="0.1" inputmode="decimal"/></div>
+    </div>
+    <div class="setting-row">
+      <div class="setting-label">USt<small>% (Standard: 20%)</small></div>
+      <div class="setting-input"><input type="number" id="set-ust" step="0.1" inputmode="decimal"/></div>
+    </div>
+    <button class="btn-save" onclick="saveSettings()" style="margin-top:20px;">Einstellungen speichern</button>
+    <button class="btn-danger" onclick="if(confirm('Alle Daten löschen?')){localStorage.clear();location.reload();}">
+      Alle Daten löschen
+    </button>
+  </div>
+</div>
+
+<script>
+// =====================================================================
+// WIENER NETZENTGELTE 2026 – Netzebene 7, ohne Leistungsmessung (Haushalt)
+// Quelle: Wiener Netze Preisblätter, gültig ab 1.1.2026
+// =====================================================================
+const WIEN_TARIFFS = {
+  // Netznutzungsentgelt Arbeitspreis (Cent/kWh) → €/kWh
+  netznutzung_arbeit: 0.0698,
+  // Netzverlustentgelt (Cent/kWh) → €/kWh
+  netzverlust: 0.0070,
+  // Erneuerbaren-Förderbeitrag Verbrauchspreis (Cent/kWh) → €/kWh
+  foerderbeitrag_arbeit: 0.00583,
+  // Erneuerbaren-Förderbeitrag Netzverlust (Cent/kWh) → €/kWh
+  foerderbeitrag_nvl: 0.00037,
+  // Elektrizitätsabgabe Haushalt (Cent/kWh) → €/kWh
+  elektrizitaetsabgabe: 0.001,
+  // Gebrauchsabgabe (% vom Netto-Netzpreis) – ab 1.3.2026: 7%
+  gebrauchsabgabe_pct: 7.0,
+  // USt
+  ust_pct: 20.0,
+  // Fixkosten (jährlich, nicht pro kWh – für Info)
+  netznutzung_grund_jahr: 54.00,
+  foerderpauschale_jahr: 19.02,
+  foerderbeitrag_grund_jahr: 3.796,
+};
+
+// =====================================================================
+// STATE
+// =====================================================================
+let charges = JSON.parse(localStorage.getItem('lf_charges') || '[]');
+let settings = JSON.parse(localStorage.getItem('lf_settings') || 'null') || {
+  defaultEnergy: 0.140118,
+  gebrauchsabgabe: WIEN_TARIFFS.gebrauchsabgabe_pct,
+  ust: WIEN_TARIFFS.ust_pct,
+};
+let currentPeriod = 'month';
+
+function persist() {
+  localStorage.setItem('lf_charges', JSON.stringify(charges));
+  localStorage.setItem('lf_settings', JSON.stringify(settings));
+}
+
+// =====================================================================
+// CALCULATION
+// =====================================================================
+function calcTotal(kwh, energyPrice) {
+  const gab = settings.gebrauchsabgabe / 100;
+  const ust = settings.ust / 100;
+
+  // Variable Netzkosten pro kWh (netto)
+  const netz = WIEN_TARIFFS.netznutzung_arbeit + WIEN_TARIFFS.netzverlust;
+  const foerder = WIEN_TARIFFS.foerderbeitrag_arbeit + WIEN_TARIFFS.foerderbeitrag_nvl;
+  const eAbgabe = WIEN_TARIFFS.elektrizitaetsabgabe;
+
+  // Gebrauchsabgabe: 7% auf Energiekosten + Netzkosten (Netznutzung + Netzverlust)
+  // NICHT auf Elektrizitätsabgabe, NICHT auf Förderbeitrag
+  // Verifiziert gegen Wien Energie Jahresabrechnung 2026
+  const gabBasis = energyPrice + netz;
+  const gabPerKwh = gabBasis * gab;
+
+  // Summe aller variablen Kosten pro kWh netto inkl. GAB
+  const nettoTotalPerKwh = energyPrice + netz + gabPerKwh + foerder + eAbgabe;
+
+  // Brutto (inkl. USt)
+  const bruttoPerKwh = nettoTotalPerKwh * (1 + ust);
+
+  const total = kwh * bruttoPerKwh;
+
+  return {
+    kwh, energyPrice, total, bruttoPerKwh,
+    breakdown: {
+      energy: kwh * energyPrice,
+      netznutzung: kwh * WIEN_TARIFFS.netznutzung_arbeit,
+      netzverlust: kwh * WIEN_TARIFFS.netzverlust,
+      foerderbeitrag: kwh * (WIEN_TARIFFS.foerderbeitrag_arbeit + WIEN_TARIFFS.foerderbeitrag_nvl),
+      eAbgabe: kwh * WIEN_TARIFFS.elektrizitaetsabgabe,
+      gabBetrag: kwh * gabPerKwh,
+      nettoGesamt: kwh * nettoTotalPerKwh,
+      ust: kwh * nettoTotalPerKwh * ust,
+      bruttoGesamt: total,
+    }
+  };
+}
+
+// =====================================================================
+// FORMAT HELPERS
+// =====================================================================
+const fmt = (n, d=2) => n.toLocaleString('de-AT', {minimumFractionDigits:d, maximumFractionDigits:d});
+const fmtDate = (s) => {
+  const d = new Date(s);
+  return d.toLocaleDateString('de-AT', {day:'numeric', month:'short', year:'numeric'});
+};
+const fmtDateShort = (s) => {
+  const d = new Date(s);
+  return d.toLocaleDateString('de-AT', {day:'numeric', month:'short'});
+};
+
+// =====================================================================
+// NAVIGATION
+// =====================================================================
+function showPage(name, btn) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-'+name).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+  else document.querySelector(`.nav-item[data-page="${name}"]`)?.classList.add('active');
+
+  if(name === 'dashboard') refreshDashboard();
+}
+
+// =====================================================================
+// ADD CHARGE PAGE
+// =====================================================================
+function initAddPage() {
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('inp-date').value = today;
+  document.getElementById('inp-energy').value = settings.defaultEnergy;
+
+  // Tariff breakdown info
+  const tb = document.getElementById('tariff-breakdown');
+  tb.innerHTML = `
+    <div class="td-row"><span class="td-label">Netznutzungsentgelt</span><span class="td-value">${fmt(WIEN_TARIFFS.netznutzung_arbeit*100,2)} ct/kWh</span></div>
+    <div class="td-row"><span class="td-label">Netzverlustentgelt</span><span class="td-value">${fmt(WIEN_TARIFFS.netzverlust*100,2)} ct/kWh</span></div>
+    <div class="td-row"><span class="td-label">Erneuerbaren-Förderbeitrag</span><span class="td-value">${fmt((WIEN_TARIFFS.foerderbeitrag_arbeit+WIEN_TARIFFS.foerderbeitrag_nvl)*100,3)} ct/kWh</span></div>
+    <div class="td-row"><span class="td-label">Elektrizitätsabgabe (Haushalt)</span><span class="td-value">${fmt(WIEN_TARIFFS.elektrizitaetsabgabe*100,1)} ct/kWh</span></div>
+    <div class="td-row"><span class="td-label">Gebrauchsabgabe Wien</span><span class="td-value">${settings.gebrauchsabgabe}% v. Energie+Netz</span></div>
+    <div class="td-row"><span class="td-label">USt</span><span class="td-value">${settings.ust}%</span></div>
+    <div class="td-row" style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px;">
+      <span class="td-label" style="color:var(--text-muted);">Jährliche Fixkosten (Info)</span><span class="td-value" style="color:var(--text-muted);">${fmt(WIEN_TARIFFS.netznutzung_grund_jahr + WIEN_TARIFFS.foerderpauschale_jahr + WIEN_TARIFFS.foerderbeitrag_grund_jahr)} €</span>
+    </div>
+  `;
+
+  updateCalc();
+}
+
+function updateCalc() {
+  const kwh = parseFloat(document.getElementById('inp-kwh').value) || 0;
+  const energy = parseFloat(document.getElementById('inp-energy').value) || 0;
+  const btn = document.getElementById('btn-save');
+
+  if(kwh <= 0) {
+    document.getElementById('rc-total').textContent = '0,00';
+    document.getElementById('rc-breakdown').innerHTML = '';
+    btn.disabled = true;
+    return;
+  }
+
+  btn.disabled = false;
+  const r = calcTotal(kwh, energy);
+  document.getElementById('rc-total').textContent = fmt(r.total);
+
+  const bd = r.breakdown;
+  document.getElementById('rc-breakdown').innerHTML = `
+    <div class="rb-row"><span>Energie (${fmt(energy,4)} €/kWh)</span><span class="rb-val">${fmt(bd.energy)} €</span></div>
+    <div class="rb-row"><span>Netznutzung (6,98 ct)</span><span class="rb-val">${fmt(bd.netznutzung)} €</span></div>
+    <div class="rb-row"><span>Netzverlust (0,70 ct)</span><span class="rb-val">${fmt(bd.netzverlust,3)} €</span></div>
+    <div class="rb-row"><span>GAB ${settings.gebrauchsabgabe}% auf Energie+Netz</span><span class="rb-val">${fmt(bd.gabBetrag,3)} €</span></div>
+    <div class="rb-row"><span>Förderbeitrag</span><span class="rb-val">${fmt(bd.foerderbeitrag,3)} €</span></div>
+    <div class="rb-row"><span>Elektrizitätsabgabe</span><span class="rb-val">${fmt(bd.eAbgabe,3)} €</span></div>
+    <div class="rb-row" style="font-weight:500;color:var(--text);"><span>Netto gesamt</span><span class="rb-val">${fmt(bd.nettoGesamt)} €</span></div>
+    <div class="rb-row"><span>USt (${settings.ust}%)</span><span class="rb-val">${fmt(bd.ust)} €</span></div>
+    <div class="rb-row rb-total"><span>Brutto gesamt</span><span class="rb-val">${fmt(bd.bruttoGesamt)} €</span></div>
+  `;
+}
+
+['inp-kwh','inp-energy'].forEach(id => {
+  document.getElementById(id).addEventListener('input', updateCalc);
+});
+
+function saveCharge() {
+  const kwh = parseFloat(document.getElementById('inp-kwh').value);
+  const energy = parseFloat(document.getElementById('inp-energy').value);
+  const date = document.getElementById('inp-date').value;
+
+  if(!kwh || kwh <= 0) return;
+
+  const r = calcTotal(kwh, energy);
+
+  charges.push({
+    id: Date.now().toString(36) + Math.random().toString(36).substr(2,4),
+    date: date,
+    kwh: kwh,
+    energyPrice: energy,
+    total: Math.round(r.total * 100) / 100,
+    bruttoPerKwh: r.bruttoPerKwh,
+    created: new Date().toISOString(),
+  });
+
+  charges.sort((a,b) => b.date.localeCompare(a.date));
+  persist();
+
+  showToast('Ladevorgang gespeichert!');
+  document.getElementById('inp-kwh').value = '';
+  updateCalc();
+  showPage('dashboard');
+}
+
+// =====================================================================
+// DASHBOARD
+// =====================================================================
+function refreshDashboard() {
+  const now = new Date();
+  let filtered = charges;
+  let label = 'Gesamt';
+
+  if(currentPeriod === 'month') {
+    const m = now.getMonth(), y = now.getFullYear();
+    filtered = charges.filter(c => { const d=new Date(c.date); return d.getMonth()===m && d.getFullYear()===y; });
+    label = 'Dieser Monat';
+  } else if(currentPeriod === 'year') {
+    const y = now.getFullYear();
+    filtered = charges.filter(c => new Date(c.date).getFullYear()===y);
+    label = 'Dieses Jahr (' + now.getFullYear() + ')';
+  }
+
+  document.getElementById('dash-period-label').textContent = label;
+
+  const totalCost = filtered.reduce((s,c) => s + c.total, 0);
+  const totalKwh = filtered.reduce((s,c) => s + c.kwh, 0);
+  const avgCost = totalKwh > 0 ? totalCost / totalKwh : 0;
+
+  document.getElementById('dash-total').textContent = fmt(totalCost);
+  document.getElementById('dash-kwh').textContent = fmt(totalKwh, 1);
+  document.getElementById('dash-avg').textContent = fmt(avgCost, 2);
+
+  // Last charge
+  const lcArea = document.getElementById('last-charge-area');
+  if(charges.length > 0) {
+    const lc = charges[0];
+    lcArea.innerHTML = `
+      <div class="last-charge">
+        <div class="lc-row">
+          <div class="lc-info">
+            <div class="lc-icon"><span class="material-symbols-outlined">bolt</span></div>
+            <div class="lc-details">
+              <div class="lc-title">Heimladung</div>
+              <div class="lc-sub">${fmtDate(lc.date)}</div>
+            </div>
+          </div>
+          <div class="lc-cost">
+            <div class="amount">${fmt(lc.total)} €</div>
+            <div class="kwh">+${fmt(lc.kwh,1)} kWh</div>
+          </div>
+        </div>
+        <div class="lc-meta">
+          <div class="tag"><div class="tag-label">Preis/kWh</div><div class="tag-value">${fmt(lc.bruttoPerKwh,2)} ct</div></div>
+          <div class="tag"><div class="tag-label">Status</div><div class="tag-value" style="color:var(--green);">● Abgeschlossen</div></div>
+        </div>
+      </div>
+    `;
+  } else {
+    lcArea.innerHTML = '<div class="empty-state"><span class="material-symbols-outlined">electric_car</span>Noch keine Ladevorgänge erfasst.</div>';
+  }
+
+  // History list
+  const hlArea = document.getElementById('history-list');
+  if(filtered.length > 0) {
+    hlArea.innerHTML = filtered.map(c => `
+      <div class="history-item-wrap" id="wrap-${c.id}">
+        <div class="hi-delete-bg" onclick="askDelete('${c.id}', ${c.kwh}, '${c.date}')">
+          <span class="material-symbols-outlined" style="font-size:20px;">delete</span>
+          Löschen
+        </div>
+        <div class="history-item" id="hi-${c.id}">
+          <div class="hi-left">
+            <div class="hi-dot"></div>
+            <div>
+              <div class="hi-kwh">${fmt(c.kwh,1)} kWh</div>
+              <div class="hi-date">${fmtDate(c.date)}</div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;">
+            <div class="hi-right">
+              <div class="hi-cost">${fmt(c.total)} €</div>
+              <div class="hi-rate">${fmt(c.bruttoPerKwh*100,1)} ct/kWh</div>
+            </div>
+            <div class="hi-actions">
+              <button class="hi-del" onclick="askDelete('${c.id}', ${c.kwh}, '${c.date}')" title="Löschen" aria-label="Ladevorgang löschen">
+                <span class="material-symbols-outlined" style="font-size:18px;">delete</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `).join('');
+
+    // Init swipe on all items
+    filtered.forEach(c => initSwipe(c.id));
+  } else {
+    hlArea.innerHTML = '<div class="empty-state" style="padding:24px;">Keine Einträge im gewählten Zeitraum.</div>';
+  }
+
+  // Chart
+  renderChart(filtered);
+}
+
+let pendingDeleteId = null;
+
+function askDelete(id, kwh, date) {
+  pendingDeleteId = id;
+  document.getElementById('confirm-detail').textContent =
+    `${fmt(kwh,1)} kWh vom ${fmtDate(date)} wird gelöscht.`;
+  document.getElementById('confirm-delete').classList.add('show');
+}
+
+function cancelDelete() {
+  pendingDeleteId = null;
+  document.getElementById('confirm-delete').classList.remove('show');
+  // Reset any swiped items
+  document.querySelectorAll('.history-item.swiped').forEach(el => el.classList.remove('swiped'));
+}
+
+function confirmDelete() {
+  if(!pendingDeleteId) return;
+  const wrap = document.getElementById('wrap-' + pendingDeleteId);
+  const item = document.getElementById('hi-' + pendingDeleteId);
+
+  document.getElementById('confirm-delete').classList.remove('show');
+
+  // Animate out
+  if(item) item.classList.add('deleting');
+  if(wrap) {
+    wrap.style.transition = 'max-height 0.35s ease, opacity 0.3s ease';
+    wrap.style.maxHeight = wrap.offsetHeight + 'px';
+    requestAnimationFrame(() => {
+      wrap.style.maxHeight = '0';
+      wrap.style.opacity = '0';
+      wrap.style.overflow = 'hidden';
+    });
+  }
+
+  setTimeout(() => {
+    charges = charges.filter(c => c.id !== pendingDeleteId);
+    pendingDeleteId = null;
+    persist();
+    refreshDashboard();
+    showToast('Eintrag gelöscht');
+  }, 350);
+}
+
+// Swipe-to-delete touch handling
+function initSwipe(id) {
+  const el = document.getElementById('hi-' + id);
+  if(!el) return;
+
+  let startX = 0, currentX = 0, isDragging = false;
+
+  el.addEventListener('touchstart', e => {
+    startX = e.touches[0].clientX;
+    isDragging = true;
+    el.style.transition = 'none';
+  }, {passive:true});
+
+  el.addEventListener('touchmove', e => {
+    if(!isDragging) return;
+    currentX = e.touches[0].clientX;
+    const diff = startX - currentX;
+    if(diff > 0) {
+      el.style.transform = `translateX(${-Math.min(diff, 120)}px)`;
+    }
+  }, {passive:true});
+
+  el.addEventListener('touchend', () => {
+    isDragging = false;
+    el.style.transition = 'transform 0.3s ease';
+    const diff = startX - currentX;
+    if(diff > 80) {
+      el.classList.add('swiped');
+      el.style.transform = '';
+    } else {
+      el.classList.remove('swiped');
+      el.style.transform = 'translateX(0)';
+    }
+  }, {passive:true});
+}
+
+// Close swiped items when tapping elsewhere
+document.addEventListener('touchstart', e => {
+  if(!e.target.closest('.history-item-wrap')) {
+    document.querySelectorAll('.history-item.swiped').forEach(el => {
+      el.classList.remove('swiped');
+      el.style.transform = 'translateX(0)';
+    });
+  }
+}, {passive:true});
+
+function setPeriod(p, btn) {
+  currentPeriod = p;
+  document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  refreshDashboard();
+}
+
+// =====================================================================
+// CHART
+// =====================================================================
+function renderChart(data) {
+  if(data.length === 0) {
+    document.getElementById('chart-line-path').setAttribute('d','');
+    document.getElementById('chart-area-path').setAttribute('d','');
+    document.getElementById('chart-labels').innerHTML = '<span>Keine Daten</span>';
+    document.getElementById('chart-badge').textContent = '';
+    return;
+  }
+
+  // Aggregate by date
+  const byDate = {};
+  data.forEach(c => { byDate[c.date] = (byDate[c.date]||0) + c.total; });
+  const dates = Object.keys(byDate).sort();
+  const values = dates.map(d => byDate[d]);
+
+  const w = 400, h = 120, pad = 4;
+  const maxV = Math.max(...values, 1);
+  const minV = Math.min(...values, 0);
+  const range = maxV - minV || 1;
+
+  const points = values.map((v,i) => {
+    const x = pad + (i / Math.max(values.length-1,1)) * (w - pad*2);
+    const y = h - pad - ((v - minV) / range) * (h - pad*2);
+    return [x, y];
+  });
+
+  // Line
+  let d = 'M ' + points.map(p => p[0]+' '+p[1]).join(' L ');
+  document.getElementById('chart-line-path').setAttribute('d', d);
+
+  // Area
+  let areaD = d + ` L ${points[points.length-1][0]} ${h} L ${points[0][0]} ${h} Z`;
+  document.getElementById('chart-area-path').setAttribute('d', areaD);
+
+  // Labels
+  const labelsEl = document.getElementById('chart-labels');
+  if(dates.length <= 6) {
+    labelsEl.innerHTML = dates.map(d => `<span>${fmtDateShort(d)}</span>`).join('');
+  } else {
+    const first = fmtDateShort(dates[0]);
+    const last = fmtDateShort(dates[dates.length-1]);
+    labelsEl.innerHTML = `<span>${first}</span><span>${last}</span>`;
+  }
+
+  // Badge
+  const badge = document.getElementById('chart-badge');
+  const totalFiltered = values.reduce((a,b)=>a+b,0);
+  badge.textContent = fmt(totalFiltered) + ' €';
+}
+
+// =====================================================================
+// CSV IMPORT
+// =====================================================================
+function initImport() {
+  const dz = document.getElementById('drop-zone');
+  const fi = document.getElementById('file-input');
+
+  ['dragenter','dragover'].forEach(e => dz.addEventListener(e, ev => { ev.preventDefault(); dz.classList.add('drag-over'); }));
+  ['dragleave','drop'].forEach(e => dz.addEventListener(e, ev => { ev.preventDefault(); dz.classList.remove('drag-over'); }));
+
+  dz.addEventListener('drop', ev => {
+    const file = ev.dataTransfer.files[0];
+    if(file) processFile(file);
+  });
+
+  fi.addEventListener('change', ev => {
+    const file = ev.target.files[0];
+    if(file) processFile(file);
+  });
+}
+
+function processFile(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    const text = e.target.result;
+    let imported = 0, dupes = 0;
+
+    if(file.name.endsWith('.json')) {
+      try {
+        const data = JSON.parse(text);
+        const arr = Array.isArray(data) ? data : [data];
+        arr.forEach(item => {
+          if(item.date && item.kwh) {
+            const ep = item.energy_price || item.energyPrice || settings.defaultEnergy;
+            const exists = charges.some(c => c.date === item.date && Math.abs(c.kwh - item.kwh) < 0.01);
+            if(exists) { dupes++; return; }
+            const r = calcTotal(item.kwh, ep);
+            charges.push({
+              id: Date.now().toString(36) + Math.random().toString(36).substr(2,4),
+              date: item.date, kwh: item.kwh, energyPrice: ep,
+              total: Math.round(r.total*100)/100, bruttoPerKwh: r.bruttoPerKwh,
+              created: new Date().toISOString(),
+            });
+            imported++;
+          }
+        });
+      } catch(err) { showToast('Fehler beim Parsen der JSON-Datei'); return; }
+    } else {
+      const lines = text.trim().split('\n');
+      const header = lines[0].toLowerCase();
+      const hasHeader = header.includes('date') || header.includes('datum');
+      const start = hasHeader ? 1 : 0;
+
+      for(let i = start; i < lines.length; i++) {
+        const parts = lines[i].split(/[,;\t]/);
+        if(parts.length < 2) continue;
+
+        let date = parts[0].trim();
+        let kwh = parseFloat(parts[1].trim().replace(',','.'));
+        let ep = parts[2] ? parseFloat(parts[2].trim().replace(',','.')) : settings.defaultEnergy;
+
+        if(!date || isNaN(kwh) || kwh <= 0) continue;
+
+        // Try to normalize date
+        if(date.includes('.')) {
+          const dp = date.split('.');
+          if(dp.length === 3) date = `${dp[2]}-${dp[1].padStart(2,'0')}-${dp[0].padStart(2,'0')}`;
+        }
+
+        const exists = charges.some(c => c.date === date && Math.abs(c.kwh - kwh) < 0.01);
+        if(exists) { dupes++; continue; }
+
+        const r = calcTotal(kwh, ep);
+        charges.push({
+          id: Date.now().toString(36) + Math.random().toString(36).substr(2,4),
+          date, kwh, energyPrice: ep,
+          total: Math.round(r.total*100)/100, bruttoPerKwh: r.bruttoPerKwh,
+          created: new Date().toISOString(),
+        });
+        imported++;
+      }
+    }
+
+    charges.sort((a,b) => b.date.localeCompare(a.date));
+    persist();
+
+    document.getElementById('import-result').innerHTML = `
+      <div class="import-result">
+        <div class="ir-row"><span>Importiert</span><span class="ir-val">${imported} Einträge</span></div>
+        <div class="ir-row"><span>Duplikate übersprungen</span><span>${dupes}</span></div>
+        <div class="ir-row"><span>Gesamt gespeichert</span><span class="ir-val">${charges.length} Einträge</span></div>
+      </div>
+    `;
+
+    showToast(`${imported} Einträge importiert!`);
+  };
+  reader.readAsText(file);
+}
+
+function exportData() {
+  const json = JSON.stringify(charges, null, 2);
+  const blob = new Blob([json], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `ladefuchs-export-${new Date().toISOString().split('T')[0]}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('Export heruntergeladen');
+}
+
+// =====================================================================
+// SETTINGS
+// =====================================================================
+function toggleSettings() {
+  const m = document.getElementById('settings-modal');
+  if(m.classList.contains('show')) {
+    m.classList.remove('show');
+  } else {
+    document.getElementById('set-energy').value = settings.defaultEnergy;
+    document.getElementById('set-gab').value = settings.gebrauchsabgabe;
+    document.getElementById('set-ust').value = settings.ust;
+    m.classList.add('show');
+  }
+}
+
+function saveSettings() {
+  settings.defaultEnergy = parseFloat(document.getElementById('set-energy').value) || 0.12;
+  settings.gebrauchsabgabe = parseFloat(document.getElementById('set-gab').value) || 7;
+  settings.ust = parseFloat(document.getElementById('set-ust').value) || 20;
+  persist();
+  toggleSettings();
+  initAddPage();
+  showToast('Einstellungen gespeichert');
+}
+
+// =====================================================================
+// TOAST
+// =====================================================================
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// =====================================================================
+// INIT
+// =====================================================================
+initAddPage();
+initImport();
+refreshDashboard();
+</script>
+</body>
+</html>
