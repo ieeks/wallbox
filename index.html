@@ -524,6 +524,59 @@ nav {
   border:2px solid var(--border);
   cursor:pointer;
 }
+
+/* Import preview */
+.import-preview {
+  background:var(--surface);
+  border-radius:var(--radius);
+  border:1px solid var(--border);
+  padding:20px;
+  margin:16px 0;
+  animation: fadeUp 0.3s ease;
+}
+.ip-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
+.ip-title { font-family:'Manrope'; font-weight:700; font-size:16px; }
+.ip-count { font-size:12px; color:var(--green); font-weight:600; }
+.ip-entry {
+  display:flex; justify-content:space-between; align-items:center;
+  padding:8px 0; border-bottom:1px solid var(--border);
+  font-size:13px;
+}
+.ip-entry:last-child { border:none; }
+.ip-entry .ip-date { color:var(--text-secondary); }
+.ip-entry .ip-kwh { font-weight:600; font-variant-numeric:tabular-nums; }
+.ip-more { font-size:11px; color:var(--text-muted); padding:8px 0; text-align:center; }
+.ip-summary {
+  margin-top:12px; padding-top:12px; border-top:1px solid var(--border);
+  display:flex; justify-content:space-around; text-align:center;
+}
+.ip-summary .ip-stat-val { font-family:'Manrope'; font-weight:700; font-size:18px; }
+.ip-summary .ip-stat-label { font-size:10px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:1px; margin-top:2px; }
+.ip-buttons { display:flex; gap:10px; margin-top:16px; }
+.ip-buttons button {
+  flex:1; padding:14px; border:none; border-radius:12px;
+  font-family:'Inter'; font-weight:600; font-size:14px; cursor:pointer;
+  transition: all 0.15s;
+}
+.ip-btn-cancel { background:var(--surface-highest); color:var(--text); }
+.ip-btn-import { background:var(--green); color:#000; }
+.ip-btn-import:active { transform:scale(0.97); }
+
+/* Insight card */
+.insight-card {
+  background:var(--surface);
+  border-radius:var(--radius-sm);
+  border:1px solid var(--border);
+  padding:14px 16px;
+  margin-bottom:16px;
+  font-size:13px;
+  line-height:1.5;
+  color:var(--text-secondary);
+  display:flex; align-items:flex-start; gap:10px;
+}
+.insight-card .insight-icon { font-size:18px; flex-shrink:0; margin-top:1px; }
+.insight-card .insight-text { flex:1; }
+.insight-card .insight-highlight { color:var(--text); font-weight:600; }
 </style>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
@@ -575,6 +628,8 @@ nav {
         <div class="stat-value"><span id="dash-avg">0,00</span> <span class="stat-unit">€/kWh</span></div>
       </div>
     </div>
+
+    <div id="insight-area"></div>
 
     <div class="section-title">Verlauf</div>
     <div class="chart-container">
@@ -1168,6 +1223,7 @@ function refreshDashboard() {
 
   // Chart
   renderChart(filtered);
+  renderInsights();
 }
 
 let pendingDeleteId = null;
@@ -1260,6 +1316,65 @@ document.addEventListener('touchstart', e => {
   }
 }, {passive:true});
 
+// =====================================================================
+// INSIGHTS
+// =====================================================================
+function renderInsights() {
+  const area = document.getElementById('insight-area');
+  if(charges.length === 0) {
+    area.innerHTML = '';
+    return;
+  }
+
+  const now = new Date();
+  const thisMonth = now.getMonth(), thisYear = now.getFullYear();
+  const thisMonthCharges = charges.filter(c => { const d=new Date(c.date); return d.getMonth()===thisMonth && d.getFullYear()===thisYear; });
+  const thisMonthKwh = thisMonthCharges.reduce((s,c) => s + c.kwh, 0);
+
+  // Previous month
+  const prevDate = new Date(thisYear, thisMonth - 1, 1);
+  const prevMonth = prevDate.getMonth(), prevYear = prevDate.getFullYear();
+  const prevMonthCharges = charges.filter(c => { const d=new Date(c.date); return d.getMonth()===prevMonth && d.getFullYear()===prevYear; });
+  const prevMonthKwh = prevMonthCharges.reduce((s,c) => s + c.kwh, 0);
+
+  const insights = [];
+
+  // Month comparison
+  if(prevMonthKwh > 0 && thisMonthKwh > 0) {
+    const pct = ((thisMonthKwh - prevMonthKwh) / prevMonthKwh * 100);
+    if(pct > 0) {
+      insights.push(`<span class="insight-highlight">+${fmt(pct,0)}%</span> mehr geladen als letzten Monat`);
+    } else if(pct < 0) {
+      insights.push(`<span class="insight-highlight">${fmt(pct,0)}%</span> weniger geladen als letzten Monat`);
+    } else {
+      insights.push(`Gleich viel geladen wie letzten Monat`);
+    }
+  } else if(thisMonthCharges.length > 0 && prevMonthKwh === 0) {
+    insights.push(`<span class="insight-highlight">${fmt(thisMonthKwh,0)} kWh</span> diesen Monat geladen`);
+  }
+
+  // Total charges count
+  if(charges.length >= 2 && insights.length === 0) {
+    insights.push(`<span class="insight-highlight">${charges.length}</span> Ladevorgänge erfasst`);
+  }
+
+  // First data
+  if(charges.length === 1) {
+    insights.push(`Erste Ladung erfasst – weiter so!`);
+  }
+
+  if(insights.length > 0) {
+    area.innerHTML = insights.map(text => `
+      <div class="insight-card">
+        <span class="insight-icon">💡</span>
+        <div class="insight-text">${text}</div>
+      </div>
+    `).join('');
+  } else {
+    area.innerHTML = '';
+  }
+}
+
 function setPeriod(p, btn) {
   currentPeriod = p;
   document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
@@ -1341,11 +1456,13 @@ function initImport() {
   });
 }
 
+let importPreview = []; // Temporary storage for CSV preview
+
 function processFile(file) {
   const reader = new FileReader();
   reader.onload = e => {
     const text = e.target.result;
-    let imported = 0, dupes = 0;
+    importPreview = [];
 
     if(file.name.endsWith('.json')) {
       try {
@@ -1355,30 +1472,25 @@ function processFile(file) {
           if(item.date && item.kwh) {
             const ep = item.energy_price || item.energyPrice || settings.defaultEnergy;
             const exists = charges.some(c => c.date === item.date && Math.abs(c.kwh - item.kwh) < 0.01);
-            if(exists) { dupes++; return; }
+            if(exists) return;
             const r = calcTotal(item.kwh, ep);
-            charges.push({
+            importPreview.push({
               id: Date.now().toString(36) + Math.random().toString(36).substr(2,4),
               date: item.date, kwh: item.kwh, energyPrice: ep,
               total: Math.round(r.total*100)/100, bruttoPerKwh: r.bruttoPerKwh,
               created: new Date().toISOString(),
             });
-            imported++;
           }
         });
       } catch(err) { showToast('Fehler beim Parsen der JSON-Datei'); return; }
     } else {
       const lines = text.trim().replace(/\r/g, '').split('\n');
       const header = lines[0].toLowerCase();
-
-      // ── go-e Wallbox CSV erkennen ──
       const isGoE = header.includes('energie [kwh]') || header.includes('session number');
 
       if(isGoE) {
-        // go-e Format: Semikolon-getrennt, Spalten per Header finden
         const cols = lines[0].split(';').map(c => c.trim().toLowerCase());
         const iStart = cols.findIndex(c => c === 'start');
-        const iEnde = cols.findIndex(c => c === 'ende');
         const iKwh = cols.findIndex(c => c.includes('energie'));
         const iMaxKw = cols.findIndex(c => c.includes('max. leistung'));
         const iDauer = cols.findIndex(c => c.includes('dauer gesamt'));
@@ -1391,91 +1503,116 @@ function processFile(file) {
         for(let i = 1; i < lines.length; i++) {
           const parts = lines[i].split(';');
           if(parts.length < Math.max(iStart, iKwh) + 1) continue;
-
-          // Datum aus "Start" Spalte: "24.03.2026 20:58" → "2026-03-24"
           const startRaw = parts[iStart].trim();
           if(!startRaw) continue;
           const dateParts = startRaw.split(' ')[0].split('.');
           if(dateParts.length !== 3) continue;
           const date = `${dateParts[2]}-${dateParts[1].padStart(2,'0')}-${dateParts[0].padStart(2,'0')}`;
-
-          // kWh: deutsches Format "72,324" → 72.324
           const kwh = parseFloat(parts[iKwh].trim().replace(',','.'));
           if(isNaN(kwh) || kwh <= 0) continue;
-
-          // Duplikat-Check
           const exists = charges.some(c => c.date === date && Math.abs(c.kwh - kwh) < 0.01);
-          if(exists) { dupes++; continue; }
-
-          // Zusatzinfos extrahieren
+          if(exists) continue;
           const maxKw = iMaxKw >= 0 ? parseFloat(parts[iMaxKw].trim().replace(',','.')) : null;
           const dauer = iDauer >= 0 ? parts[iDauer].trim() : null;
-          const endeRaw = iEnde >= 0 ? parts[iEnde].trim() : null;
-
           const ep = settings.defaultEnergy;
           const r = calcTotal(kwh, ep);
-          charges.push({
+          importPreview.push({
             id: Date.now().toString(36) + Math.random().toString(36).substr(2,5) + i,
             date, kwh, energyPrice: ep,
             total: Math.round(r.total*100)/100, bruttoPerKwh: r.bruttoPerKwh,
-            source: 'go-e',
-            maxKw: maxKw,
-            dauer: dauer,
+            source: 'go-e', maxKw, dauer,
             created: new Date().toISOString(),
           });
-          imported++;
         }
-
       } else {
-        // ── Standard CSV (date,kwh,energy_price) ──
         const hasHeader = header.includes('date') || header.includes('datum');
         const start = hasHeader ? 1 : 0;
-
         for(let i = start; i < lines.length; i++) {
           const parts = lines[i].split(/[,;\t]/);
           if(parts.length < 2) continue;
-
           let date = parts[0].trim();
           let kwh = parseFloat(parts[1].trim().replace(',','.'));
           let ep = parts[2] ? parseFloat(parts[2].trim().replace(',','.')) : settings.defaultEnergy;
-
           if(!date || isNaN(kwh) || kwh <= 0) continue;
-
-          // Normalize date
           if(date.includes('.')) {
             const dp = date.split('.');
             if(dp.length === 3) date = `${dp[2]}-${dp[1].padStart(2,'0')}-${dp[0].padStart(2,'0')}`;
           }
-
           const exists = charges.some(c => c.date === date && Math.abs(c.kwh - kwh) < 0.01);
-          if(exists) { dupes++; continue; }
-
+          if(exists) continue;
           const r = calcTotal(kwh, ep);
-          charges.push({
+          importPreview.push({
             id: Date.now().toString(36) + Math.random().toString(36).substr(2,4),
             date, kwh, energyPrice: ep,
             total: Math.round(r.total*100)/100, bruttoPerKwh: r.bruttoPerKwh,
             created: new Date().toISOString(),
           });
-          imported++;
         }
       }
     }
 
-    charges.sort((a,b) => b.date.localeCompare(a.date));
-    persist();
-
-    document.getElementById('import-result').innerHTML = `
-      <div class="import-result">
-        <div class="ir-row"><span>Importiert</span><span class="ir-val">${imported} Einträge</span></div>
-        <div class="ir-row"><span>Duplikate übersprungen</span><span>${dupes}</span></div>
-        <div class="ir-row"><span>Gesamt gespeichert</span><span class="ir-val">${charges.length} Einträge</span></div>
-      </div>
-    `;
-
-    showToast(`${imported} Einträge importiert!`);
+    // Show preview instead of immediately saving
+    showImportPreview();
   };
   reader.readAsText(file);
+}
+
+function showImportPreview() {
+  const area = document.getElementById('import-result');
+  if(importPreview.length === 0) {
+    area.innerHTML = `<div class="import-preview"><div style="text-align:center;color:var(--text-secondary);padding:12px;">Keine neuen Einträge gefunden (evtl. bereits importiert).</div></div>`;
+    return;
+  }
+
+  const totalKwh = importPreview.reduce((s,c) => s + c.kwh, 0);
+  const totalEur = importPreview.reduce((s,c) => s + c.total, 0);
+  const show = importPreview.slice(0, 5);
+  const more = importPreview.length - show.length;
+
+  area.innerHTML = `
+    <div class="import-preview">
+      <div class="ip-header">
+        <span class="ip-title">Vorschau</span>
+        <span class="ip-count">${importPreview.length} Ladung${importPreview.length !== 1 ? 'en' : ''} erkannt</span>
+      </div>
+      ${show.map(c => `
+        <div class="ip-entry">
+          <span class="ip-date">${fmtDate(c.date)}</span>
+          <span class="ip-kwh">${fmt(c.kwh,1)} kWh</span>
+        </div>
+      `).join('')}
+      ${more > 0 ? `<div class="ip-more">+ ${more} weitere Einträge</div>` : ''}
+      <div class="ip-summary">
+        <div><div class="ip-stat-val">${fmt(totalKwh,1)}</div><div class="ip-stat-label">kWh</div></div>
+        <div><div class="ip-stat-val">${fmt(totalEur)}</div><div class="ip-stat-label">Euro</div></div>
+        <div><div class="ip-stat-val">${importPreview.length}</div><div class="ip-stat-label">Ladungen</div></div>
+      </div>
+      <div class="ip-buttons">
+        <button class="ip-btn-cancel" onclick="cancelImport()">Abbrechen</button>
+        <button class="ip-btn-import" onclick="confirmImport()">Importieren</button>
+      </div>
+    </div>
+  `;
+}
+
+function confirmImport() {
+  const count = importPreview.length;
+  const totalKwh = importPreview.reduce((s,c) => s + c.kwh, 0);
+  const totalEur = importPreview.reduce((s,c) => s + c.total, 0);
+
+  charges.push(...importPreview);
+  charges.sort((a,b) => b.date.localeCompare(a.date));
+  persist();
+
+  importPreview = [];
+  document.getElementById('import-result').innerHTML = '';
+  showToast(`+${count} Ladungen • ${fmt(totalKwh,1)} kWh • ${fmt(totalEur)} €`);
+}
+
+function cancelImport() {
+  importPreview = [];
+  document.getElementById('import-result').innerHTML = '';
+  showToast('Import abgebrochen');
 }
 
 function exportData() {
