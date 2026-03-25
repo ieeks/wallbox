@@ -470,9 +470,78 @@ nav {
 .chart-line { fill:none; stroke:var(--primary); stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
 .chart-area { fill:url(#chartGrad); }
 .chart-dot { fill:var(--primary); }
+
+/* Login screen */
+.login-screen {
+  position:fixed; inset:0; z-index:500;
+  background:var(--bg);
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  padding:40px 24px; text-align:center;
+}
+.login-screen.hidden { display:none; }
+.login-logo { font-size:64px; margin-bottom:16px; }
+.login-title { font-family:'Manrope'; font-weight:800; font-size:32px; color:var(--primary); margin-bottom:8px; }
+.login-sub { font-size:14px; color:var(--text-secondary); margin-bottom:40px; line-height:1.6; max-width:300px; }
+.btn-google {
+  display:flex; align-items:center; gap:12px;
+  padding:16px 32px; border-radius:50px;
+  background:#fff; color:#333; border:none;
+  font-family:'Inter'; font-weight:600; font-size:15px;
+  cursor:pointer; transition:all 0.2s;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.3);
+}
+.btn-google:hover { transform:scale(1.02); box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
+.btn-google:active { transform:scale(0.98); }
+.btn-google svg { width:20px; height:20px; }
+.login-skip {
+  margin-top:20px; background:none; border:none;
+  color:var(--text-muted); font-size:13px; cursor:pointer;
+  text-decoration:underline; font-family:'Inter';
+}
+.login-skip:hover { color:var(--text-secondary); }
+
+/* Sync indicator */
+.sync-badge {
+  display:flex; align-items:center; gap:6px;
+  font-size:10px; font-weight:600; text-transform:uppercase;
+  letter-spacing:0.5px; color:var(--text-muted);
+  padding:4px 10px; border-radius:20px;
+  background:var(--surface); border:1px solid var(--border);
+}
+.sync-badge .sync-dot {
+  width:6px; height:6px; border-radius:50%;
+  background:var(--text-muted);
+}
+.sync-badge.online .sync-dot { background:var(--green); box-shadow:0 0 6px rgba(52,208,88,0.5); }
+.sync-badge.syncing .sync-dot { background:var(--amber); animation: pulse 1s infinite; }
+.sync-badge.offline .sync-dot { background:var(--text-muted); }
+@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+
+/* User avatar in header */
+.header-right { display:flex; align-items:center; gap:8px; }
+.user-avatar {
+  width:28px; height:28px; border-radius:50%;
+  border:2px solid var(--border);
+  cursor:pointer;
+}
 </style>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 </head>
 <body>
+
+<!-- LOGIN SCREEN -->
+<div class="login-screen" id="login-screen">
+  <div class="login-logo">🦊</div>
+  <div class="login-title">Ladefuchs</div>
+  <div class="login-sub">Dein persönliches E-Auto Lade Dashboard. Melde dich an, um deine Daten sicher in der Cloud zu speichern.</div>
+  <button class="btn-google" onclick="signInWithGoogle()">
+    <svg viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+    Mit Google anmelden
+  </button>
+  <button class="login-skip" onclick="skipLogin()">Ohne Anmeldung fortfahren</button>
+</div>
 
 <div class="toast" id="toast"></div>
 
@@ -482,9 +551,15 @@ nav {
     <div class="logo-icon">🦊</div>
     <span class="logo-text">Ladefuchs</span>
   </div>
-  <button onclick="toggleSettings()" aria-label="Einstellungen">
-    <span class="material-symbols-outlined">settings</span>
-  </button>
+  <div class="header-right">
+    <div class="sync-badge offline" id="sync-badge">
+      <div class="sync-dot"></div>
+      <span id="sync-label">Offline</span>
+    </div>
+    <button onclick="toggleSettings()" aria-label="Einstellungen">
+      <span class="material-symbols-outlined">settings</span>
+    </button>
+  </div>
 </header>
 
 <!-- MAIN CONTENT -->
@@ -683,7 +758,13 @@ nav {
       <div class="setting-input"><input type="number" id="set-ust" step="0.1" inputmode="decimal"/></div>
     </div>
     <button class="btn-save" onclick="saveSettings()" style="margin-top:20px;">Einstellungen speichern</button>
-    <button class="btn-danger" onclick="if(confirm('Alle Daten löschen?')){localStorage.clear();location.reload();}">
+    <div id="settings-user-info" style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);display:none;">
+      <div class="setting-row">
+        <div class="setting-label">Angemeldet als<small id="settings-user-email"></small></div>
+        <div><button class="btn-danger" onclick="signOut()" style="width:auto;padding:8px 16px;margin:0;">Abmelden</button></div>
+      </div>
+    </div>
+    <button class="btn-danger" onclick="if(confirm('Alle Daten löschen? (lokal + Cloud)')){clearAllData();}">
       Alle Daten löschen
     </button>
   </div>
@@ -691,25 +772,52 @@ nav {
 
 <script>
 // =====================================================================
+// 🔥 FIREBASE CONFIG – HIER DEINE EIGENEN WERTE EINSETZEN
+// =====================================================================
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyDkCyR1nFg38VvJi6POYzfVblRuV5OIvwM",
+  authDomain: "wallbox-manuel.firebaseapp.com",
+  projectId: "wallbox-manuel",
+  storageBucket: "wallbox-manuel.firebasestorage.app",
+  messagingSenderId: "547824093655",
+  appId: "1:547824093655:web:05c57f3e9a810edcce6392"
+};
+
+// =====================================================================
+// FIREBASE INIT
+// =====================================================================
+let db = null;
+let auth = null;
+let currentUser = null;
+let firebaseReady = false;
+
+try {
+  if(FIREBASE_CONFIG.apiKey !== "DEIN_API_KEY") {
+    firebase.initializeApp(FIREBASE_CONFIG);
+    db = firebase.firestore();
+    auth = firebase.auth();
+    firebaseReady = true;
+    // Enable offline persistence
+    db.enablePersistence({synchronizeTabs: true}).catch(err => {
+      console.log('Firestore persistence error:', err.code);
+    });
+  }
+} catch(e) {
+  console.log('Firebase not configured, using localStorage only');
+}
+
+// =====================================================================
 // WIENER NETZENTGELTE 2026 – Netzebene 7, ohne Leistungsmessung (Haushalt)
 // Quelle: Wiener Netze Preisblätter, gültig ab 1.1.2026
 // =====================================================================
 const WIEN_TARIFFS = {
-  // Netznutzungsentgelt Arbeitspreis (Cent/kWh) → €/kWh
   netznutzung_arbeit: 0.0698,
-  // Netzverlustentgelt (Cent/kWh) → €/kWh
   netzverlust: 0.0070,
-  // Erneuerbaren-Förderbeitrag Verbrauchspreis (Cent/kWh) → €/kWh
   foerderbeitrag_arbeit: 0.00583,
-  // Erneuerbaren-Förderbeitrag Netzverlust (Cent/kWh) → €/kWh
   foerderbeitrag_nvl: 0.00037,
-  // Elektrizitätsabgabe Haushalt (Cent/kWh) → €/kWh
   elektrizitaetsabgabe: 0.001,
-  // Gebrauchsabgabe (% vom Netto-Netzpreis) – ab 1.3.2026: 7%
   gebrauchsabgabe_pct: 7.0,
-  // USt
   ust_pct: 20.0,
-  // Fixkosten (jährlich, nicht pro kWh – für Info)
   netznutzung_grund_jahr: 54.00,
   foerderpauschale_jahr: 19.02,
   foerderbeitrag_grund_jahr: 3.796,
@@ -726,9 +834,140 @@ let settings = JSON.parse(localStorage.getItem('lf_settings') || 'null') || {
 };
 let currentPeriod = 'month';
 
+// =====================================================================
+// PERSIST (localStorage + Firestore)
+// =====================================================================
 function persist() {
   localStorage.setItem('lf_charges', JSON.stringify(charges));
   localStorage.setItem('lf_settings', JSON.stringify(settings));
+  syncToCloud();
+}
+
+async function syncToCloud() {
+  if(!firebaseReady || !currentUser) return;
+  setSyncStatus('syncing');
+  try {
+    const ref = db.collection('users').doc(currentUser.uid);
+    await ref.set({
+      charges: charges,
+      settings: settings,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    }, {merge: true});
+    setSyncStatus('online');
+  } catch(e) {
+    console.error('Sync error:', e);
+    setSyncStatus('offline');
+  }
+}
+
+async function loadFromCloud() {
+  if(!firebaseReady || !currentUser) return;
+  setSyncStatus('syncing');
+  try {
+    const doc = await db.collection('users').doc(currentUser.uid).get();
+    if(doc.exists) {
+      const data = doc.data();
+      if(data.charges && data.charges.length > 0) {
+        // Merge: keep local charges that don't exist in cloud, add cloud charges
+        const cloudIds = new Set(data.charges.map(c => c.id));
+        const localOnly = charges.filter(c => !cloudIds.has(c.id));
+        charges = [...data.charges, ...localOnly];
+        charges.sort((a,b) => b.date.localeCompare(a.date));
+      }
+      if(data.settings) {
+        settings = {...settings, ...data.settings};
+      }
+      // Save merged data locally
+      localStorage.setItem('lf_charges', JSON.stringify(charges));
+      localStorage.setItem('lf_settings', JSON.stringify(settings));
+      // Push merged data back to cloud
+      await syncToCloud();
+    } else {
+      // First login: push local data to cloud
+      await syncToCloud();
+    }
+    setSyncStatus('online');
+  } catch(e) {
+    console.error('Load error:', e);
+    setSyncStatus('offline');
+  }
+}
+
+function setSyncStatus(status) {
+  const badge = document.getElementById('sync-badge');
+  const label = document.getElementById('sync-label');
+  badge.className = 'sync-badge ' + status;
+  if(status === 'online') label.textContent = 'Cloud';
+  else if(status === 'syncing') label.textContent = 'Sync...';
+  else label.textContent = 'Lokal';
+}
+
+// =====================================================================
+// AUTH
+// =====================================================================
+function signInWithGoogle() {
+  if(!firebaseReady) {
+    showToast('Firebase nicht konfiguriert – siehe Setup-Anleitung');
+    return;
+  }
+  const provider = new firebase.auth.GoogleAuthProvider();
+  auth.signInWithPopup(provider).catch(err => {
+    console.error('Auth error:', err);
+    showToast('Anmeldung fehlgeschlagen');
+  });
+}
+
+function signOut() {
+  if(auth) {
+    auth.signOut();
+  }
+  currentUser = null;
+  setSyncStatus('offline');
+  toggleSettings();
+  document.getElementById('settings-user-info').style.display = 'none';
+  document.getElementById('login-screen').classList.remove('hidden');
+  showToast('Abgemeldet');
+}
+
+function skipLogin() {
+  document.getElementById('login-screen').classList.add('hidden');
+  setSyncStatus('offline');
+}
+
+async function clearAllData() {
+  if(firebaseReady && currentUser) {
+    try {
+      await db.collection('users').doc(currentUser.uid).delete();
+    } catch(e) { console.error(e); }
+  }
+  localStorage.clear();
+  location.reload();
+}
+
+// Auth state listener
+if(auth) {
+  auth.onAuthStateChanged(async (user) => {
+    if(user) {
+      currentUser = user;
+      document.getElementById('login-screen').classList.add('hidden');
+      document.getElementById('settings-user-info').style.display = 'block';
+      document.getElementById('settings-user-email').textContent = user.email;
+      await loadFromCloud();
+      initAddPage();
+      refreshDashboard();
+    } else {
+      currentUser = null;
+      setSyncStatus('offline');
+      // Check if user previously skipped
+      if(localStorage.getItem('lf_charges')) {
+        document.getElementById('login-screen').classList.add('hidden');
+      }
+    }
+  });
+} else {
+  // No Firebase: hide login, work offline
+  document.getElementById('login-screen').classList.add('hidden');
+  setSyncStatus('offline');
 }
 
 // =====================================================================
