@@ -675,17 +675,32 @@ nav {
     <div id="import-result"></div>
 
     <div style="margin-top:24px;">
-      <div class="section-title">Erwartetes Format (CSV)</div>
-      <div style="background:var(--surface);border-radius:var(--radius-sm);padding:14px;font-size:12px;color:var(--text-secondary);font-family:monospace;line-height:1.8;border:1px solid var(--border);">
-        date,kwh,energy_price<br>
-        2026-03-20,18.5,0.12<br>
-        2026-03-22,22.1,0.10<br>
+      <div class="section-title">Unterstützte Formate</div>
+
+      <div style="background:var(--surface);border-radius:var(--radius-sm);padding:14px;border:1px solid var(--border);margin-bottom:12px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+          <span style="font-size:16px;">🔌</span>
+          <span style="font-size:13px;font-weight:600;">go-e Charger CSV</span>
+          <span style="font-size:10px;padding:2px 8px;border-radius:10px;background:var(--green-dim);color:var(--green);font-weight:600;">AUTO-ERKENNUNG</span>
+        </div>
+        <div style="font-size:11px;color:var(--text-secondary);line-height:1.5;">
+          Direkt aus der go-e App exportieren → hier hochladen. Datum, kWh, Dauer und Leistung werden automatisch erkannt. Energiepreis wird aus den Einstellungen übernommen.
+        </div>
       </div>
-      <div style="font-size:11px;color:var(--text-muted);margin-top:8px;line-height:1.5;">
-        <b>date</b>: Datum (YYYY-MM-DD)<br>
-        <b>kwh</b>: Geladene Energie in kWh<br>
-        <b>energy_price</b>: Netto-Energiepreis in €/kWh<br>
-        Netzentgelte werden automatisch berechnet.
+
+      <div style="background:var(--surface);border-radius:var(--radius-sm);padding:14px;border:1px solid var(--border);margin-bottom:12px;">
+        <div style="font-size:13px;font-weight:600;margin-bottom:8px;">📄 Standard CSV</div>
+        <div style="font-size:12px;color:var(--text-secondary);font-family:monospace;line-height:1.8;">
+          date,kwh,energy_price<br>
+          2026-03-20,18.5,0.12<br>
+        </div>
+      </div>
+
+      <div style="background:var(--surface);border-radius:var(--radius-sm);padding:14px;border:1px solid var(--border);">
+        <div style="font-size:13px;font-weight:600;margin-bottom:8px;">📋 JSON</div>
+        <div style="font-size:11px;color:var(--text-secondary);line-height:1.5;">
+          Ladefuchs JSON-Export oder manuell erstellte JSON-Dateien.
+        </div>
       </div>
     </div>
 
@@ -1353,38 +1368,97 @@ function processFile(file) {
         });
       } catch(err) { showToast('Fehler beim Parsen der JSON-Datei'); return; }
     } else {
-      const lines = text.trim().split('\n');
+      const lines = text.trim().replace(/\r/g, '').split('\n');
       const header = lines[0].toLowerCase();
-      const hasHeader = header.includes('date') || header.includes('datum');
-      const start = hasHeader ? 1 : 0;
 
-      for(let i = start; i < lines.length; i++) {
-        const parts = lines[i].split(/[,;\t]/);
-        if(parts.length < 2) continue;
+      // ── go-e Wallbox CSV erkennen ──
+      const isGoE = header.includes('energie [kwh]') || header.includes('session number');
 
-        let date = parts[0].trim();
-        let kwh = parseFloat(parts[1].trim().replace(',','.'));
-        let ep = parts[2] ? parseFloat(parts[2].trim().replace(',','.')) : settings.defaultEnergy;
+      if(isGoE) {
+        // go-e Format: Semikolon-getrennt, Spalten per Header finden
+        const cols = lines[0].split(';').map(c => c.trim().toLowerCase());
+        const iStart = cols.findIndex(c => c === 'start');
+        const iEnde = cols.findIndex(c => c === 'ende');
+        const iKwh = cols.findIndex(c => c.includes('energie'));
+        const iMaxKw = cols.findIndex(c => c.includes('max. leistung'));
+        const iDauer = cols.findIndex(c => c.includes('dauer gesamt'));
 
-        if(!date || isNaN(kwh) || kwh <= 0) continue;
-
-        // Try to normalize date
-        if(date.includes('.')) {
-          const dp = date.split('.');
-          if(dp.length === 3) date = `${dp[2]}-${dp[1].padStart(2,'0')}-${dp[0].padStart(2,'0')}`;
+        if(iStart === -1 || iKwh === -1) {
+          showToast('go-e CSV erkannt, aber Spalten fehlen');
+          return;
         }
 
-        const exists = charges.some(c => c.date === date && Math.abs(c.kwh - kwh) < 0.01);
-        if(exists) { dupes++; continue; }
+        for(let i = 1; i < lines.length; i++) {
+          const parts = lines[i].split(';');
+          if(parts.length < Math.max(iStart, iKwh) + 1) continue;
 
-        const r = calcTotal(kwh, ep);
-        charges.push({
-          id: Date.now().toString(36) + Math.random().toString(36).substr(2,4),
-          date, kwh, energyPrice: ep,
-          total: Math.round(r.total*100)/100, bruttoPerKwh: r.bruttoPerKwh,
-          created: new Date().toISOString(),
-        });
-        imported++;
+          // Datum aus "Start" Spalte: "24.03.2026 20:58" → "2026-03-24"
+          const startRaw = parts[iStart].trim();
+          if(!startRaw) continue;
+          const dateParts = startRaw.split(' ')[0].split('.');
+          if(dateParts.length !== 3) continue;
+          const date = `${dateParts[2]}-${dateParts[1].padStart(2,'0')}-${dateParts[0].padStart(2,'0')}`;
+
+          // kWh: deutsches Format "72,324" → 72.324
+          const kwh = parseFloat(parts[iKwh].trim().replace(',','.'));
+          if(isNaN(kwh) || kwh <= 0) continue;
+
+          // Duplikat-Check
+          const exists = charges.some(c => c.date === date && Math.abs(c.kwh - kwh) < 0.01);
+          if(exists) { dupes++; continue; }
+
+          // Zusatzinfos extrahieren
+          const maxKw = iMaxKw >= 0 ? parseFloat(parts[iMaxKw].trim().replace(',','.')) : null;
+          const dauer = iDauer >= 0 ? parts[iDauer].trim() : null;
+          const endeRaw = iEnde >= 0 ? parts[iEnde].trim() : null;
+
+          const ep = settings.defaultEnergy;
+          const r = calcTotal(kwh, ep);
+          charges.push({
+            id: Date.now().toString(36) + Math.random().toString(36).substr(2,5) + i,
+            date, kwh, energyPrice: ep,
+            total: Math.round(r.total*100)/100, bruttoPerKwh: r.bruttoPerKwh,
+            source: 'go-e',
+            maxKw: maxKw,
+            dauer: dauer,
+            created: new Date().toISOString(),
+          });
+          imported++;
+        }
+
+      } else {
+        // ── Standard CSV (date,kwh,energy_price) ──
+        const hasHeader = header.includes('date') || header.includes('datum');
+        const start = hasHeader ? 1 : 0;
+
+        for(let i = start; i < lines.length; i++) {
+          const parts = lines[i].split(/[,;\t]/);
+          if(parts.length < 2) continue;
+
+          let date = parts[0].trim();
+          let kwh = parseFloat(parts[1].trim().replace(',','.'));
+          let ep = parts[2] ? parseFloat(parts[2].trim().replace(',','.')) : settings.defaultEnergy;
+
+          if(!date || isNaN(kwh) || kwh <= 0) continue;
+
+          // Normalize date
+          if(date.includes('.')) {
+            const dp = date.split('.');
+            if(dp.length === 3) date = `${dp[2]}-${dp[1].padStart(2,'0')}-${dp[0].padStart(2,'0')}`;
+          }
+
+          const exists = charges.some(c => c.date === date && Math.abs(c.kwh - kwh) < 0.01);
+          if(exists) { dupes++; continue; }
+
+          const r = calcTotal(kwh, ep);
+          charges.push({
+            id: Date.now().toString(36) + Math.random().toString(36).substr(2,4),
+            date, kwh, energyPrice: ep,
+            total: Math.round(r.total*100)/100, bruttoPerKwh: r.bruttoPerKwh,
+            created: new Date().toISOString(),
+          });
+          imported++;
+        }
       }
     }
 
