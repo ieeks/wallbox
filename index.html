@@ -922,6 +922,7 @@ function signOut() {
     auth.signOut();
   }
   currentUser = null;
+  localStorage.removeItem('lf_skipped_login');
   setSyncStatus('offline');
   toggleSettings();
   document.getElementById('settings-user-info').style.display = 'none';
@@ -931,6 +932,7 @@ function signOut() {
 
 function skipLogin() {
   document.getElementById('login-screen').classList.add('hidden');
+  localStorage.setItem('lf_skipped_login', 'true');
   setSyncStatus('offline');
 }
 
@@ -949,6 +951,7 @@ if(auth) {
   auth.onAuthStateChanged(async (user) => {
     if(user) {
       currentUser = user;
+      localStorage.removeItem('lf_skipped_login');
       document.getElementById('login-screen').classList.add('hidden');
       document.getElementById('settings-user-info').style.display = 'block';
       document.getElementById('settings-user-email').textContent = user.email;
@@ -958,8 +961,8 @@ if(auth) {
     } else {
       currentUser = null;
       setSyncStatus('offline');
-      // Check if user previously skipped
-      if(localStorage.getItem('lf_charges')) {
+      // Only hide login screen if user explicitly skipped before
+      if(localStorage.getItem('lf_skipped_login') === 'true') {
         document.getElementById('login-screen').classList.add('hidden');
       }
     }
