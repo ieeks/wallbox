@@ -1,0 +1,864 @@
+// =====================================================================
+// 🔥 FIREBASE CONFIG – HIER DEINE EIGENEN WERTE EINSETZEN
+// =====================================================================
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyDkCyR1nFg38VvJi6POYzfVblRuV5OIvwM",
+  authDomain: "wallbox-manuel.firebaseapp.com",
+  projectId: "wallbox-manuel",
+  storageBucket: "wallbox-manuel.firebasestorage.app",
+  messagingSenderId: "547824093655",
+  appId: "1:547824093655:web:05c57f3e9a810edcce6392"
+};
+
+// =====================================================================
+// FIREBASE INIT (kein Login nötig – gemeinsamer Haushalt-Datensatz)
+// =====================================================================
+let db = null;
+let firebaseReady = false;
+const HOUSEHOLD_DOC = 'haushalt'; // Fixer Dokument-Name für euren Haushalt
+
+try {
+  if(FIREBASE_CONFIG.apiKey !== "DEIN_API_KEY") {
+    firebase.initializeApp(FIREBASE_CONFIG);
+    db = firebase.firestore();
+    firebaseReady = true;
+    db.enablePersistence({synchronizeTabs: true}).catch(err => {
+      console.log('Firestore persistence error:', err.code);
+    });
+  }
+} catch(e) {
+  console.log('Firebase not configured, using localStorage only');
+}
+
+// =====================================================================
+// WIENER NETZENTGELTE 2026 – Netzebene 7, ohne Leistungsmessung (Haushalt)
+// Quelle: Wiener Netze Preisblätter, gültig ab 1.1.2026
+// =====================================================================
+const WIEN_TARIFFS = {
+  netznutzung_arbeit: 0.0698,
+  netzverlust: 0.0070,
+  foerderbeitrag_arbeit: 0.00583,
+  foerderbeitrag_nvl: 0.00037,
+  elektrizitaetsabgabe: 0.001,
+  gebrauchsabgabe_pct: 7.0,
+  ust_pct: 20.0,
+  netznutzung_grund_jahr: 54.00,
+  foerderpauschale_jahr: 19.02,
+  foerderbeitrag_grund_jahr: 3.796,
+};
+
+// =====================================================================
+// STATE
+// =====================================================================
+let charges = JSON.parse(localStorage.getItem('lf_charges') || '[]');
+let settings = JSON.parse(localStorage.getItem('lf_settings') || 'null') || {
+  defaultEnergy: 0.140118,
+  gebrauchsabgabe: WIEN_TARIFFS.gebrauchsabgabe_pct,
+  ust: WIEN_TARIFFS.ust_pct,
+  theme: 'light',
+};
+let currentPeriod = 'month';
+
+// =====================================================================
+// PERSIST (localStorage + Firestore)
+// =====================================================================
+function persist() {
+  localStorage.setItem('lf_charges', JSON.stringify(charges));
+  localStorage.setItem('lf_settings', JSON.stringify(settings));
+  syncToCloud();
+}
+
+function applyTheme() {
+  document.documentElement.setAttribute('data-theme', settings.theme === 'dark' ? 'dark' : 'light');
+  const headerToggle = document.getElementById('theme-toggle-header');
+  if (headerToggle) {
+    headerToggle.checked = (settings.theme || 'light') === 'light';
+  }
+}
+
+function setThemeFromToggle(isLight) {
+  settings.theme = isLight ? 'light' : 'dark';
+  applyTheme();
+  persist();
+}
+
+async function syncToCloud() {
+  if(!firebaseReady) return;
+  setSyncStatus('syncing');
+  try {
+    await db.collection('haushalte').doc(HOUSEHOLD_DOC).set({
+      charges: charges,
+      settings: settings,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    setSyncStatus('online');
+  } catch(e) {
+    console.error('Sync error:', e);
+    setSyncStatus('offline');
+  }
+}
+
+async function loadFromCloud() {
+  if(!firebaseReady) return;
+  setSyncStatus('syncing');
+  try {
+    const doc = await db.collection('haushalte').doc(HOUSEHOLD_DOC).get();
+    if(doc.exists) {
+      const data = doc.data();
+      if(data.charges && data.charges.length > 0) {
+        const cloudIds = new Set(data.charges.map(c => c.id));
+        const localOnlyEntries = charges.filter(c => !cloudIds.has(c.id));
+        charges = [...data.charges, ...localOnlyEntries];
+        charges.sort((a,b) => b.date.localeCompare(a.date));
+        // Push merged data back if we had local-only entries
+        if(localOnlyEntries.length > 0) {
+          localStorage.setItem('lf_charges', JSON.stringify(charges));
+          localStorage.setItem('lf_settings', JSON.stringify(settings));
+          await syncToCloud();
+          return;
+        }
+      }
+      if(data.settings) {
+        settings = {...settings, ...data.settings};
+      }
+      localStorage.setItem('lf_charges', JSON.stringify(charges));
+      localStorage.setItem('lf_settings', JSON.stringify(settings));
+    } else {
+      await syncToCloud();
+    }
+    setSyncStatus('online');
+  } catch(e) {
+    console.error('Load error:', e);
+    setSyncStatus('offline');
+  }
+}
+
+function setSyncStatus(status) {
+  const badge = document.getElementById('sync-badge');
+  const label = document.getElementById('sync-label');
+  badge.className = 'sync-badge ' + status;
+  if(status === 'online') label.textContent = 'Cloud';
+  else if(status === 'syncing') label.textContent = 'Sync...';
+  else label.textContent = 'Lokal';
+}
+
+async function clearAllData() {
+  if(firebaseReady) {
+    try {
+      await db.collection('haushalte').doc(HOUSEHOLD_DOC).delete();
+    } catch(e) { console.error(e); }
+  }
+  localStorage.clear();
+  location.reload();
+}
+
+// Beim Start: Daten aus Cloud laden
+if(firebaseReady) {
+  loadFromCloud().then(() => {
+    applyTheme();
+    initAddPage();
+    refreshDashboard();
+  });
+} else {
+  setSyncStatus('offline');
+  applyTheme();
+}
+
+// =====================================================================
+// CALCULATION
+// =====================================================================
+function calcTotal(kwh, energyPrice) {
+  const gab = settings.gebrauchsabgabe / 100;
+  const ust = settings.ust / 100;
+
+  // Variable Netzkosten pro kWh (netto)
+  const netz = WIEN_TARIFFS.netznutzung_arbeit + WIEN_TARIFFS.netzverlust;
+  const foerder = WIEN_TARIFFS.foerderbeitrag_arbeit + WIEN_TARIFFS.foerderbeitrag_nvl;
+  const eAbgabe = WIEN_TARIFFS.elektrizitaetsabgabe;
+
+  // Gebrauchsabgabe: 7% auf Energiekosten + Netzkosten (Netznutzung + Netzverlust)
+  // NICHT auf Elektrizitätsabgabe, NICHT auf Förderbeitrag
+  // Verifiziert gegen Wien Energie Jahresabrechnung 2026
+  const gabBasis = energyPrice + netz;
+  const gabPerKwh = gabBasis * gab;
+
+  // Summe aller variablen Kosten pro kWh netto inkl. GAB
+  const nettoTotalPerKwh = energyPrice + netz + gabPerKwh + foerder + eAbgabe;
+
+  // Brutto (inkl. USt)
+  const bruttoPerKwh = nettoTotalPerKwh * (1 + ust);
+
+  const total = kwh * bruttoPerKwh;
+
+  return {
+    kwh, energyPrice, total, bruttoPerKwh,
+    breakdown: {
+      energy: kwh * energyPrice,
+      netznutzung: kwh * WIEN_TARIFFS.netznutzung_arbeit,
+      netzverlust: kwh * WIEN_TARIFFS.netzverlust,
+      foerderbeitrag: kwh * (WIEN_TARIFFS.foerderbeitrag_arbeit + WIEN_TARIFFS.foerderbeitrag_nvl),
+      eAbgabe: kwh * WIEN_TARIFFS.elektrizitaetsabgabe,
+      gabBetrag: kwh * gabPerKwh,
+      nettoGesamt: kwh * nettoTotalPerKwh,
+      ust: kwh * nettoTotalPerKwh * ust,
+      bruttoGesamt: total,
+    }
+  };
+}
+
+// =====================================================================
+// FORMAT HELPERS
+// =====================================================================
+const fmt = (n, d=2) => n.toLocaleString('de-AT', {minimumFractionDigits:d, maximumFractionDigits:d});
+const fmtDate = (s) => {
+  const d = new Date(s);
+  return d.toLocaleDateString('de-AT', {day:'numeric', month:'short', year:'numeric'});
+};
+const fmtDateShort = (s) => {
+  const d = new Date(s);
+  return d.toLocaleDateString('de-AT', {day:'numeric', month:'short'});
+};
+
+// =====================================================================
+// NAVIGATION
+// =====================================================================
+function showPage(name, btn) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-'+name).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+  else document.querySelector(`.nav-item[data-page="${name}"]`)?.classList.add('active');
+
+  if(name === 'dashboard') refreshDashboard();
+}
+
+// =====================================================================
+// ADD CHARGE PAGE
+// =====================================================================
+function initAddPage() {
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('inp-date').value = today;
+  document.getElementById('inp-energy').value = settings.defaultEnergy;
+
+  // Tariff breakdown info
+  const tb = document.getElementById('tariff-breakdown');
+  tb.innerHTML = `
+    <div class="td-row"><span class="td-label">Netznutzungsentgelt</span><span class="td-value">${fmt(WIEN_TARIFFS.netznutzung_arbeit*100,2)} ct/kWh</span></div>
+    <div class="td-row"><span class="td-label">Netzverlustentgelt</span><span class="td-value">${fmt(WIEN_TARIFFS.netzverlust*100,2)} ct/kWh</span></div>
+    <div class="td-row"><span class="td-label">Erneuerbaren-Förderbeitrag</span><span class="td-value">${fmt((WIEN_TARIFFS.foerderbeitrag_arbeit+WIEN_TARIFFS.foerderbeitrag_nvl)*100,3)} ct/kWh</span></div>
+    <div class="td-row"><span class="td-label">Elektrizitätsabgabe (Haushalt)</span><span class="td-value">${fmt(WIEN_TARIFFS.elektrizitaetsabgabe*100,1)} ct/kWh</span></div>
+    <div class="td-row"><span class="td-label">Gebrauchsabgabe Wien</span><span class="td-value">${settings.gebrauchsabgabe}% v. Energie+Netz</span></div>
+    <div class="td-row"><span class="td-label">USt</span><span class="td-value">${settings.ust}%</span></div>
+    <div class="td-row" style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px;">
+      <span class="td-label" style="color:var(--text-muted);">Jährliche Fixkosten (Info)</span><span class="td-value" style="color:var(--text-muted);">${fmt(WIEN_TARIFFS.netznutzung_grund_jahr + WIEN_TARIFFS.foerderpauschale_jahr + WIEN_TARIFFS.foerderbeitrag_grund_jahr)} €</span>
+    </div>
+  `;
+
+  updateCalc();
+}
+
+function updateCalc() {
+  const kwh = parseFloat(document.getElementById('inp-kwh').value) || 0;
+  const energy = parseFloat(document.getElementById('inp-energy').value) || 0;
+  const btn = document.getElementById('btn-save');
+
+  if(kwh <= 0) {
+    document.getElementById('rc-total').textContent = '0,00';
+    document.getElementById('rc-breakdown').innerHTML = '';
+    btn.disabled = true;
+    return;
+  }
+
+  btn.disabled = false;
+  const r = calcTotal(kwh, energy);
+  document.getElementById('rc-total').textContent = fmt(r.total);
+
+  const bd = r.breakdown;
+  document.getElementById('rc-breakdown').innerHTML = `
+    <div class="rb-row"><span>Energie (${fmt(energy,4)} €/kWh)</span><span class="rb-val">${fmt(bd.energy)} €</span></div>
+    <div class="rb-row"><span>Netznutzung (6,98 ct)</span><span class="rb-val">${fmt(bd.netznutzung)} €</span></div>
+    <div class="rb-row"><span>Netzverlust (0,70 ct)</span><span class="rb-val">${fmt(bd.netzverlust,3)} €</span></div>
+    <div class="rb-row"><span>GAB ${settings.gebrauchsabgabe}% auf Energie+Netz</span><span class="rb-val">${fmt(bd.gabBetrag,3)} €</span></div>
+    <div class="rb-row"><span>Förderbeitrag</span><span class="rb-val">${fmt(bd.foerderbeitrag,3)} €</span></div>
+    <div class="rb-row"><span>Elektrizitätsabgabe</span><span class="rb-val">${fmt(bd.eAbgabe,3)} €</span></div>
+    <div class="rb-row" style="font-weight:500;color:var(--text);"><span>Netto gesamt</span><span class="rb-val">${fmt(bd.nettoGesamt)} €</span></div>
+    <div class="rb-row"><span>USt (${settings.ust}%)</span><span class="rb-val">${fmt(bd.ust)} €</span></div>
+    <div class="rb-row rb-total"><span>Brutto gesamt</span><span class="rb-val">${fmt(bd.bruttoGesamt)} €</span></div>
+  `;
+}
+
+['inp-kwh','inp-energy'].forEach(id => {
+  document.getElementById(id).addEventListener('input', updateCalc);
+});
+
+function saveCharge() {
+  const kwh = parseFloat(document.getElementById('inp-kwh').value);
+  const energy = parseFloat(document.getElementById('inp-energy').value);
+  const date = document.getElementById('inp-date').value;
+
+  if(!kwh || kwh <= 0) return;
+
+  const r = calcTotal(kwh, energy);
+
+  charges.push({
+    id: Date.now().toString(36) + Math.random().toString(36).substr(2,4),
+    date: date,
+    kwh: kwh,
+    energyPrice: energy,
+    total: Math.round(r.total * 100) / 100,
+    bruttoPerKwh: r.bruttoPerKwh,
+    created: new Date().toISOString(),
+  });
+
+  charges.sort((a,b) => b.date.localeCompare(a.date));
+  persist();
+
+  showToast('Ladevorgang gespeichert!');
+  document.getElementById('inp-kwh').value = '';
+  updateCalc();
+  showPage('dashboard');
+}
+
+// =====================================================================
+// DASHBOARD
+// =====================================================================
+function refreshDashboard() {
+  const now = new Date();
+  let filtered = charges;
+  let label = 'Gesamt';
+
+  if(currentPeriod === 'month') {
+    const m = now.getMonth(), y = now.getFullYear();
+    filtered = charges.filter(c => { const d=new Date(c.date); return d.getMonth()===m && d.getFullYear()===y; });
+    label = 'Dieser Monat';
+  } else if(currentPeriod === 'year') {
+    const y = now.getFullYear();
+    filtered = charges.filter(c => new Date(c.date).getFullYear()===y);
+    label = 'Dieses Jahr (' + now.getFullYear() + ')';
+  }
+
+  document.getElementById('dash-period-label').textContent = label;
+
+  const totalCost = filtered.reduce((s,c) => s + c.total, 0);
+  const totalKwh = filtered.reduce((s,c) => s + c.kwh, 0);
+  const avgCost = totalKwh > 0 ? totalCost / totalKwh : 0;
+
+  document.getElementById('dash-total').textContent = fmt(totalCost);
+  document.getElementById('dash-kwh').textContent = fmt(totalKwh, 1);
+  document.getElementById('dash-avg').textContent = fmt(avgCost, 2);
+
+  // Last charge
+  const lcArea = document.getElementById('last-charge-area');
+  if(charges.length > 0) {
+    const lc = charges[0];
+    lcArea.innerHTML = `
+      <div class="last-charge">
+        <div class="lc-row">
+          <div class="lc-info">
+            <div class="lc-icon"><span class="material-symbols-outlined">bolt</span></div>
+            <div class="lc-details">
+              <div class="lc-title">Heimladung</div>
+              <div class="lc-sub">${fmtDate(lc.date)}</div>
+            </div>
+          </div>
+          <div class="lc-cost">
+            <div class="amount">${fmt(lc.total)} €</div>
+            <div class="kwh">+${fmt(lc.kwh,1)} kWh</div>
+          </div>
+        </div>
+        <div class="lc-meta">
+          <div class="tag"><div class="tag-label">Preis/kWh</div><div class="tag-value">${fmt(lc.bruttoPerKwh,2)} ct</div></div>
+          <div class="tag"><div class="tag-label">Status</div><div class="tag-value" style="color:var(--green);">● Abgeschlossen</div></div>
+        </div>
+      </div>
+    `;
+  } else {
+    lcArea.innerHTML = '<div class="empty-state"><span class="material-symbols-outlined">electric_car</span>Noch keine Ladevorgänge erfasst.</div>';
+  }
+
+  // History list
+  const hlArea = document.getElementById('history-list');
+  if(filtered.length > 0) {
+    hlArea.innerHTML = filtered.map(c => `
+      <div class="history-item-wrap" id="wrap-${c.id}">
+        <div class="hi-delete-bg" onclick="askDelete('${c.id}', ${c.kwh}, '${c.date}')">
+          <span class="material-symbols-outlined" style="font-size:20px;">delete</span>
+          Löschen
+        </div>
+        <div class="history-item" id="hi-${c.id}">
+          <div class="hi-left">
+            <div class="hi-dot"></div>
+            <div>
+              <div class="hi-kwh">${fmt(c.kwh,1)} kWh</div>
+              <div class="hi-date">${fmtDate(c.date)}</div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;">
+            <div class="hi-right">
+              <div class="hi-cost">${fmt(c.total)} €</div>
+              <div class="hi-rate">${fmt(c.bruttoPerKwh*100,1)} ct/kWh</div>
+            </div>
+            <div class="hi-actions">
+              <button class="hi-del" onclick="askDelete('${c.id}', ${c.kwh}, '${c.date}')" title="Löschen" aria-label="Ladevorgang löschen">
+                <span class="material-symbols-outlined" style="font-size:18px;">delete</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `).join('');
+
+    // Init swipe on all items
+    filtered.forEach(c => initSwipe(c.id));
+  } else {
+    hlArea.innerHTML = '<div class="empty-state" style="padding:24px;">Keine Einträge im gewählten Zeitraum.</div>';
+  }
+
+  // Chart
+  renderChart(filtered);
+  renderInsights();
+}
+
+let pendingDeleteId = null;
+
+function askDelete(id, kwh, date) {
+  pendingDeleteId = id;
+  document.getElementById('confirm-detail').textContent =
+    `${fmt(kwh,1)} kWh vom ${fmtDate(date)} wird gelöscht.`;
+  document.getElementById('confirm-delete').classList.add('show');
+}
+
+function cancelDelete() {
+  pendingDeleteId = null;
+  document.getElementById('confirm-delete').classList.remove('show');
+  // Reset any swiped items
+  document.querySelectorAll('.history-item.swiped').forEach(el => el.classList.remove('swiped'));
+}
+
+function confirmDelete() {
+  if(!pendingDeleteId) return;
+  const wrap = document.getElementById('wrap-' + pendingDeleteId);
+  const item = document.getElementById('hi-' + pendingDeleteId);
+
+  document.getElementById('confirm-delete').classList.remove('show');
+
+  // Animate out
+  if(item) item.classList.add('deleting');
+  if(wrap) {
+    wrap.style.transition = 'max-height 0.35s ease, opacity 0.3s ease';
+    wrap.style.maxHeight = wrap.offsetHeight + 'px';
+    requestAnimationFrame(() => {
+      wrap.style.maxHeight = '0';
+      wrap.style.opacity = '0';
+      wrap.style.overflow = 'hidden';
+    });
+  }
+
+  setTimeout(() => {
+    charges = charges.filter(c => c.id !== pendingDeleteId);
+    pendingDeleteId = null;
+    persist();
+    refreshDashboard();
+    showToast('Eintrag gelöscht');
+  }, 350);
+}
+
+// Swipe-to-delete touch handling
+function initSwipe(id) {
+  const el = document.getElementById('hi-' + id);
+  if(!el) return;
+
+  let startX = 0, currentX = 0, isDragging = false;
+
+  el.addEventListener('touchstart', e => {
+    startX = e.touches[0].clientX;
+    isDragging = true;
+    el.style.transition = 'none';
+  }, {passive:true});
+
+  el.addEventListener('touchmove', e => {
+    if(!isDragging) return;
+    currentX = e.touches[0].clientX;
+    const diff = startX - currentX;
+    if(diff > 0) {
+      el.style.transform = `translateX(${-Math.min(diff, 120)}px)`;
+    }
+  }, {passive:true});
+
+  el.addEventListener('touchend', () => {
+    isDragging = false;
+    el.style.transition = 'transform 0.3s ease';
+    const diff = startX - currentX;
+    if(diff > 80) {
+      el.classList.add('swiped');
+      el.style.transform = '';
+    } else {
+      el.classList.remove('swiped');
+      el.style.transform = 'translateX(0)';
+    }
+  }, {passive:true});
+}
+
+// Close swiped items when tapping elsewhere
+document.addEventListener('touchstart', e => {
+  if(!e.target.closest('.history-item-wrap')) {
+    document.querySelectorAll('.history-item.swiped').forEach(el => {
+      el.classList.remove('swiped');
+      el.style.transform = 'translateX(0)';
+    });
+  }
+}, {passive:true});
+
+// =====================================================================
+// INSIGHTS
+// =====================================================================
+function renderInsights() {
+  const area = document.getElementById('insight-area');
+  if(charges.length === 0) {
+    area.innerHTML = '';
+    return;
+  }
+
+  const now = new Date();
+  const thisMonth = now.getMonth(), thisYear = now.getFullYear();
+  const thisMonthCharges = charges.filter(c => { const d=new Date(c.date); return d.getMonth()===thisMonth && d.getFullYear()===thisYear; });
+  const thisMonthKwh = thisMonthCharges.reduce((s,c) => s + c.kwh, 0);
+
+  // Previous month
+  const prevDate = new Date(thisYear, thisMonth - 1, 1);
+  const prevMonth = prevDate.getMonth(), prevYear = prevDate.getFullYear();
+  const prevMonthCharges = charges.filter(c => { const d=new Date(c.date); return d.getMonth()===prevMonth && d.getFullYear()===prevYear; });
+  const prevMonthKwh = prevMonthCharges.reduce((s,c) => s + c.kwh, 0);
+
+  const insights = [];
+
+  // Month comparison
+  if(prevMonthKwh > 0 && thisMonthKwh > 0) {
+    const pct = ((thisMonthKwh - prevMonthKwh) / prevMonthKwh * 100);
+    if(pct > 0) {
+      insights.push(`<span class="insight-highlight">+${fmt(pct,0)}%</span> mehr geladen als letzten Monat`);
+    } else if(pct < 0) {
+      insights.push(`<span class="insight-highlight">${fmt(pct,0)}%</span> weniger geladen als letzten Monat`);
+    } else {
+      insights.push(`Gleich viel geladen wie letzten Monat`);
+    }
+  } else if(thisMonthCharges.length > 0 && prevMonthKwh === 0) {
+    insights.push(`<span class="insight-highlight">${fmt(thisMonthKwh,0)} kWh</span> diesen Monat geladen`);
+  }
+
+  // Total charges count
+  if(charges.length >= 2 && insights.length === 0) {
+    insights.push(`<span class="insight-highlight">${charges.length}</span> Ladevorgänge erfasst`);
+  }
+
+  // First data
+  if(charges.length === 1) {
+    insights.push(`Erste Ladung erfasst – weiter so!`);
+  }
+
+  if(insights.length > 0) {
+    area.innerHTML = insights.map(text => `
+      <div class="insight-card">
+        <span class="insight-icon">💡</span>
+        <div class="insight-text">${text}</div>
+      </div>
+    `).join('');
+  } else {
+    area.innerHTML = '';
+  }
+}
+
+function setPeriod(p, btn) {
+  currentPeriod = p;
+  document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  refreshDashboard();
+}
+
+// =====================================================================
+// CHART
+// =====================================================================
+function renderChart(data) {
+  if(data.length === 0) {
+    document.getElementById('chart-line-path').setAttribute('d','');
+    document.getElementById('chart-area-path').setAttribute('d','');
+    document.getElementById('chart-labels').innerHTML = '<span>Keine Daten</span>';
+    document.getElementById('chart-badge').textContent = '';
+    return;
+  }
+
+  // Aggregate by date
+  const byDate = {};
+  data.forEach(c => { byDate[c.date] = (byDate[c.date]||0) + c.total; });
+  const dates = Object.keys(byDate).sort();
+  const values = dates.map(d => byDate[d]);
+
+  const w = 400, h = 120, pad = 4;
+  const maxV = Math.max(...values, 1);
+  const minV = Math.min(...values, 0);
+  const range = maxV - minV || 1;
+
+  const points = values.map((v,i) => {
+    const x = pad + (i / Math.max(values.length-1,1)) * (w - pad*2);
+    const y = h - pad - ((v - minV) / range) * (h - pad*2);
+    return [x, y];
+  });
+
+  // Line
+  let d = 'M ' + points.map(p => p[0]+' '+p[1]).join(' L ');
+  document.getElementById('chart-line-path').setAttribute('d', d);
+
+  // Area
+  let areaD = d + ` L ${points[points.length-1][0]} ${h} L ${points[0][0]} ${h} Z`;
+  document.getElementById('chart-area-path').setAttribute('d', areaD);
+
+  // Labels
+  const labelsEl = document.getElementById('chart-labels');
+  if(dates.length <= 6) {
+    labelsEl.innerHTML = dates.map(d => `<span>${fmtDateShort(d)}</span>`).join('');
+  } else {
+    const first = fmtDateShort(dates[0]);
+    const last = fmtDateShort(dates[dates.length-1]);
+    labelsEl.innerHTML = `<span>${first}</span><span>${last}</span>`;
+  }
+
+  // Badge
+  const badge = document.getElementById('chart-badge');
+  const totalFiltered = values.reduce((a,b)=>a+b,0);
+  badge.textContent = fmt(totalFiltered) + ' €';
+}
+
+// =====================================================================
+// CSV IMPORT
+// =====================================================================
+function initImport() {
+  const dz = document.getElementById('drop-zone');
+  const fi = document.getElementById('file-input');
+
+  ['dragenter','dragover'].forEach(e => dz.addEventListener(e, ev => { ev.preventDefault(); dz.classList.add('drag-over'); }));
+  ['dragleave','drop'].forEach(e => dz.addEventListener(e, ev => { ev.preventDefault(); dz.classList.remove('drag-over'); }));
+
+  dz.addEventListener('drop', ev => {
+    const file = ev.dataTransfer.files[0];
+    if(file) processFile(file);
+  });
+
+  fi.addEventListener('change', ev => {
+    const file = ev.target.files[0];
+    if(file) processFile(file);
+  });
+}
+
+let importPreview = []; // Temporary storage for CSV preview
+
+function processFile(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    const text = e.target.result;
+    importPreview = [];
+
+    if(file.name.endsWith('.json')) {
+      try {
+        const data = JSON.parse(text);
+        const arr = Array.isArray(data) ? data : [data];
+        arr.forEach(item => {
+          if(item.date && item.kwh) {
+            const ep = item.energy_price || item.energyPrice || settings.defaultEnergy;
+            const exists = charges.some(c => c.date === item.date && Math.abs(c.kwh - item.kwh) < 0.01);
+            if(exists) return;
+            const r = calcTotal(item.kwh, ep);
+            importPreview.push({
+              id: Date.now().toString(36) + Math.random().toString(36).substr(2,4),
+              date: item.date, kwh: item.kwh, energyPrice: ep,
+              total: Math.round(r.total*100)/100, bruttoPerKwh: r.bruttoPerKwh,
+              created: new Date().toISOString(),
+            });
+          }
+        });
+      } catch(err) { showToast('Fehler beim Parsen der JSON-Datei'); return; }
+    } else {
+      const lines = text.trim().replace(/\r/g, '').split('\n');
+      const header = lines[0].toLowerCase();
+      const isGoE = header.includes('energie [kwh]') || header.includes('session number');
+
+      if(isGoE) {
+        const cols = lines[0].split(';').map(c => c.trim().toLowerCase());
+        const iStart = cols.findIndex(c => c === 'start');
+        const iKwh = cols.findIndex(c => c.includes('energie'));
+        const iMaxKw = cols.findIndex(c => c.includes('max. leistung'));
+        const iDauer = cols.findIndex(c => c.includes('dauer gesamt'));
+
+        if(iStart === -1 || iKwh === -1) {
+          showToast('go-e CSV erkannt, aber Spalten fehlen');
+          return;
+        }
+
+        for(let i = 1; i < lines.length; i++) {
+          const parts = lines[i].split(';');
+          if(parts.length < Math.max(iStart, iKwh) + 1) continue;
+          const startRaw = parts[iStart].trim();
+          if(!startRaw) continue;
+          const dateParts = startRaw.split(' ')[0].split('.');
+          if(dateParts.length !== 3) continue;
+          const date = `${dateParts[2]}-${dateParts[1].padStart(2,'0')}-${dateParts[0].padStart(2,'0')}`;
+          const kwh = parseFloat(parts[iKwh].trim().replace(',','.'));
+          if(isNaN(kwh) || kwh <= 0) continue;
+          const exists = charges.some(c => c.date === date && Math.abs(c.kwh - kwh) < 0.01);
+          if(exists) continue;
+          const maxKw = iMaxKw >= 0 ? parseFloat(parts[iMaxKw].trim().replace(',','.')) : null;
+          const dauer = iDauer >= 0 ? parts[iDauer].trim() : null;
+          const ep = settings.defaultEnergy;
+          const r = calcTotal(kwh, ep);
+          importPreview.push({
+            id: Date.now().toString(36) + Math.random().toString(36).substr(2,5) + i,
+            date, kwh, energyPrice: ep,
+            total: Math.round(r.total*100)/100, bruttoPerKwh: r.bruttoPerKwh,
+            source: 'go-e', maxKw, dauer,
+            created: new Date().toISOString(),
+          });
+        }
+      } else {
+        const hasHeader = header.includes('date') || header.includes('datum');
+        const start = hasHeader ? 1 : 0;
+        for(let i = start; i < lines.length; i++) {
+          const parts = lines[i].split(/[,;\t]/);
+          if(parts.length < 2) continue;
+          let date = parts[0].trim();
+          let kwh = parseFloat(parts[1].trim().replace(',','.'));
+          let ep = parts[2] ? parseFloat(parts[2].trim().replace(',','.')) : settings.defaultEnergy;
+          if(!date || isNaN(kwh) || kwh <= 0) continue;
+          if(date.includes('.')) {
+            const dp = date.split('.');
+            if(dp.length === 3) date = `${dp[2]}-${dp[1].padStart(2,'0')}-${dp[0].padStart(2,'0')}`;
+          }
+          const exists = charges.some(c => c.date === date && Math.abs(c.kwh - kwh) < 0.01);
+          if(exists) continue;
+          const r = calcTotal(kwh, ep);
+          importPreview.push({
+            id: Date.now().toString(36) + Math.random().toString(36).substr(2,4),
+            date, kwh, energyPrice: ep,
+            total: Math.round(r.total*100)/100, bruttoPerKwh: r.bruttoPerKwh,
+            created: new Date().toISOString(),
+          });
+        }
+      }
+    }
+
+    // Show preview instead of immediately saving
+    showImportPreview();
+  };
+  reader.readAsText(file);
+}
+
+function showImportPreview() {
+  const area = document.getElementById('import-result');
+  if(importPreview.length === 0) {
+    area.innerHTML = `<div class="import-preview"><div style="text-align:center;color:var(--text-secondary);padding:12px;">Keine neuen Einträge gefunden (evtl. bereits importiert).</div></div>`;
+    return;
+  }
+
+  const totalKwh = importPreview.reduce((s,c) => s + c.kwh, 0);
+  const totalEur = importPreview.reduce((s,c) => s + c.total, 0);
+  const show = importPreview.slice(0, 5);
+  const more = importPreview.length - show.length;
+
+  area.innerHTML = `
+    <div class="import-preview">
+      <div class="ip-header">
+        <span class="ip-title">Vorschau</span>
+        <span class="ip-count">${importPreview.length} Ladung${importPreview.length !== 1 ? 'en' : ''} erkannt</span>
+      </div>
+      ${show.map(c => `
+        <div class="ip-entry">
+          <span class="ip-date">${fmtDate(c.date)}</span>
+          <span class="ip-kwh">${fmt(c.kwh,1)} kWh</span>
+        </div>
+      `).join('')}
+      ${more > 0 ? `<div class="ip-more">+ ${more} weitere Einträge</div>` : ''}
+      <div class="ip-summary">
+        <div><div class="ip-stat-val">${fmt(totalKwh,1)}</div><div class="ip-stat-label">kWh</div></div>
+        <div><div class="ip-stat-val">${fmt(totalEur)}</div><div class="ip-stat-label">Euro</div></div>
+        <div><div class="ip-stat-val">${importPreview.length}</div><div class="ip-stat-label">Ladungen</div></div>
+      </div>
+      <div class="ip-buttons">
+        <button class="ip-btn-cancel" onclick="cancelImport()">Abbrechen</button>
+        <button class="ip-btn-import" onclick="confirmImport()">Importieren</button>
+      </div>
+    </div>
+  `;
+}
+
+function confirmImport() {
+  const count = importPreview.length;
+  const totalKwh = importPreview.reduce((s,c) => s + c.kwh, 0);
+  const totalEur = importPreview.reduce((s,c) => s + c.total, 0);
+
+  charges.push(...importPreview);
+  charges.sort((a,b) => b.date.localeCompare(a.date));
+  persist();
+
+  importPreview = [];
+  document.getElementById('import-result').innerHTML = '';
+  showToast(`+${count} Ladungen • ${fmt(totalKwh,1)} kWh • ${fmt(totalEur)} €`);
+}
+
+function cancelImport() {
+  importPreview = [];
+  document.getElementById('import-result').innerHTML = '';
+  showToast('Import abgebrochen');
+}
+
+function exportData() {
+  const json = JSON.stringify(charges, null, 2);
+  const blob = new Blob([json], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `ladefuchs-export-${new Date().toISOString().split('T')[0]}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('Export heruntergeladen');
+}
+
+// =====================================================================
+// SETTINGS
+// =====================================================================
+function toggleSettings() {
+  const m = document.getElementById('settings-modal');
+  if(m.classList.contains('show')) {
+    m.classList.remove('show');
+  } else {
+    document.getElementById('set-energy').value = settings.defaultEnergy;
+    document.getElementById('set-gab').value = settings.gebrauchsabgabe;
+    document.getElementById('set-ust').value = settings.ust;
+    m.classList.add('show');
+  }
+}
+
+function saveSettings() {
+  settings.defaultEnergy = parseFloat(document.getElementById('set-energy').value) || 0.12;
+  settings.gebrauchsabgabe = parseFloat(document.getElementById('set-gab').value) || 7;
+  settings.ust = parseFloat(document.getElementById('set-ust').value) || 20;
+  applyTheme();
+  persist();
+  toggleSettings();
+  initAddPage();
+  showToast('Einstellungen gespeichert');
+}
+
+// =====================================================================
+// TOAST
+// =====================================================================
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// =====================================================================
+// INIT
+// =====================================================================
+initAddPage();
+initImport();
+refreshDashboard();
