@@ -11,8 +11,9 @@ Berechnet die echten Kosten jeder Ladung inkl. aller Wiener Netzentgelte, Abgabe
 ## Features
 
 - **Exakte Kostenberechnung** – Netznutzung, Netzverlust, Förderbeitrag, Elektrizitätsabgabe, Gebrauchsabgabe (7%), USt (20%)
+- **Sommer-Nieder-Arbeitspreis (SNAP)** – automatische Erkennung: Apr–Sep, 10–16 Uhr → –20% auf Netznutzungsentgelt; Ersparnis wird live angezeigt
 - **Dashboard** mit Monats-/Jahres-/Gesamtübersicht, Verlaufs-Chart und letzter Ladung
-- **CSV/JSON Import** für Bulk-Einträge (z.B. go-e Wallbox Export)
+- **CSV/JSON Import** für Bulk-Einträge (z.B. go-e Wallbox Export) – Startzeit wird automatisch für SNAP-Berechnung verwendet
 - **Cloud Sync** via Firebase – Google Login, automatische Sicherung
 - **Offline-fähig** – funktioniert auch ohne Internet über localStorage
 - **Mobile-first** – Dark Mode, Swipe-to-Delete, PWA-ready
@@ -29,6 +30,16 @@ Berechnet die echten Kosten jeder Ladung inkl. aller Wiener Netzentgelte, Abgabe
 | USt | 20% |
 
 Quelle: [Wiener Netze Preisblätter](https://www.wienernetze.at/stromnetzbedingungen), gültig ab 1.1.2026.
+
+### ☀️ Sommer-Nieder-Arbeitspreis (SNAP)
+
+| | |
+|---|---|
+| Zeitraum | 1. April – 30. September |
+| Uhrzeit | 10:00 – 16:00 |
+| Rabatt | –20% auf Netznutzungsentgelt (6,98 → 5,58 ct/kWh) |
+
+Quelle: [E-Control](https://www.e-control.at/sommer-nieder-arbeitspreis). Wird automatisch angewendet – kein Opt-in nötig.
 
 ## Setup
 
