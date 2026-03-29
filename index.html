@@ -123,6 +123,12 @@
       <input type="date" id="inp-date" style="color:var(--text);font-family:Inter;font-size:14px;"/>
     </div>
 
+    <label class="input-label">Uhrzeit (Ladestart)</label>
+    <div class="input-card date-input-wrap">
+      <span class="material-symbols-outlined ic-icon">schedule</span>
+      <input type="time" id="inp-time" style="color:var(--text);font-family:Inter;font-size:14px;"/>
+    </div>
+
     <details class="tariff-info">
       <summary>
         <span class="material-symbols-outlined arrow" style="font-size:16px;">chevron_right</span>
@@ -139,6 +145,7 @@
         <div class="rc-dot"></div>
       </div>
       <div class="rc-amount"><span id="rc-total">0,00</span><span class="curr"> €</span></div>
+      <div id="rc-snap" style="display:none;align-items:center;gap:6px;font-size:12px;color:#16a34a;background:rgba(22,163,74,0.1);border-radius:8px;padding:6px 10px;margin:4px 0 8px;"></div>
       <div class="rc-breakdown" id="rc-breakdown"></div>
       <div class="rc-note">
         Berechnet: kWh × (Energiepreis + Netznutzung + Netzverlust) × Gebrauchsabgabe + Förderbeitrag + E-Abgabe → × USt. Verifiziert gegen Wien Energie Jahresabrechnung 2026.

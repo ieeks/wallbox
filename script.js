@@ -45,7 +45,18 @@ const WIEN_TARIFFS = {
   netznutzung_grund_jahr: 54.00,
   foerderpauschale_jahr: 19.02,
   foerderbeitrag_grund_jahr: 3.796,
+  snap_rabatt: 0.20, // Sommer-Nieder-Arbeitspreis: 20% Rabatt auf Netznutzung
 };
+
+// Sommer-Nieder-Arbeitspreis (SNAP): Apr–Sep, 10:00–16:00
+function isSnap(date, time) {
+  if(!date || !time) return false;
+  const month = new Date(date).getMonth(); // 0=Jan
+  if(month < 3 || month > 8) return false; // Apr=3 … Sep=8
+  const [h, m] = time.split(':').map(Number);
+  const minutes = h * 60 + (m || 0);
+  return minutes >= 10 * 60 && minutes < 16 * 60;
+}
 
 // =====================================================================
 // STATE
@@ -167,12 +178,13 @@ if(firebaseReady) {
 // =====================================================================
 // CALCULATION
 // =====================================================================
-function calcTotal(kwh, energyPrice) {
+function calcTotal(kwh, energyPrice, snap = false) {
   const gab = settings.gebrauchsabgabe / 100;
   const ust = settings.ust / 100;
 
-  // Variable Netzkosten pro kWh (netto)
-  const netz = WIEN_TARIFFS.netznutzung_arbeit + WIEN_TARIFFS.netzverlust;
+  // Variable Netzkosten pro kWh (netto); SNAP = 20% Rabatt auf Netznutzungsentgelt
+  const netznutzung = WIEN_TARIFFS.netznutzung_arbeit * (snap ? (1 - WIEN_TARIFFS.snap_rabatt) : 1);
+  const netz = netznutzung + WIEN_TARIFFS.netzverlust;
   const foerder = WIEN_TARIFFS.foerderbeitrag_arbeit + WIEN_TARIFFS.foerderbeitrag_nvl;
   const eAbgabe = WIEN_TARIFFS.elektrizitaetsabgabe;
 
@@ -191,10 +203,10 @@ function calcTotal(kwh, energyPrice) {
   const total = kwh * bruttoPerKwh;
 
   return {
-    kwh, energyPrice, total, bruttoPerKwh,
+    kwh, energyPrice, snap, total, bruttoPerKwh, netznutzung,
     breakdown: {
       energy: kwh * energyPrice,
-      netznutzung: kwh * WIEN_TARIFFS.netznutzung_arbeit,
+      netznutzung: kwh * netznutzung,
       netzverlust: kwh * WIEN_TARIFFS.netzverlust,
       foerderbeitrag: kwh * (WIEN_TARIFFS.foerderbeitrag_arbeit + WIEN_TARIFFS.foerderbeitrag_nvl),
       eAbgabe: kwh * WIEN_TARIFFS.elektrizitaetsabgabe,
@@ -236,8 +248,11 @@ function showPage(name, btn) {
 // ADD CHARGE PAGE
 // =====================================================================
 function initAddPage() {
-  const today = new Date().toISOString().split('T')[0];
+  const now = new Date();
+  const today = now.toISOString().split('T')[0];
+  const nowTime = now.toTimeString().slice(0, 5);
   document.getElementById('inp-date').value = today;
+  document.getElementById('inp-time').value = nowTime;
   document.getElementById('inp-energy').value = settings.defaultEnergy;
 
   // Tariff breakdown info
@@ -252,6 +267,9 @@ function initAddPage() {
     <div class="td-row" style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px;">
       <span class="td-label" style="color:var(--text-muted);">Jährliche Fixkosten (Info)</span><span class="td-value" style="color:var(--text-muted);">${fmt(WIEN_TARIFFS.netznutzung_grund_jahr + WIEN_TARIFFS.foerderpauschale_jahr + WIEN_TARIFFS.foerderbeitrag_grund_jahr)} €</span>
     </div>
+    <div class="td-row" style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px;color:#16a34a;">
+      <span class="td-label">☀️ Sommer-Nieder-Arbeitspreis</span><span class="td-value">–20% Netznutzung, Apr–Sep 10–16 Uhr</span>
+    </div>
   `;
 
   updateCalc();
@@ -260,23 +278,36 @@ function initAddPage() {
 function updateCalc() {
   const kwh = parseFloat(document.getElementById('inp-kwh').value) || 0;
   const energy = parseFloat(document.getElementById('inp-energy').value) || 0;
+  const date = document.getElementById('inp-date').value;
+  const time = document.getElementById('inp-time').value;
+  const snap = isSnap(date, time);
   const btn = document.getElementById('btn-save');
 
   if(kwh <= 0) {
     document.getElementById('rc-total').textContent = '0,00';
     document.getElementById('rc-breakdown').innerHTML = '';
+    document.getElementById('rc-snap').style.display = 'none';
     btn.disabled = true;
     return;
   }
 
   btn.disabled = false;
-  const r = calcTotal(kwh, energy);
+  const r = calcTotal(kwh, energy, snap);
   document.getElementById('rc-total').textContent = fmt(r.total);
+
+  const snapEl = document.getElementById('rc-snap');
+  if(snap) {
+    const saving = kwh * WIEN_TARIFFS.netznutzung_arbeit * WIEN_TARIFFS.snap_rabatt * (1 + settings.gebrauchsabgabe / 100) * (1 + settings.ust / 100);
+    snapEl.style.display = 'flex';
+    snapEl.innerHTML = `<span>☀️</span><span>Sommer-Nieder-Arbeitspreis aktiv – Ersparnis: <strong>–${fmt(saving,2)} €</strong></span>`;
+  } else {
+    snapEl.style.display = 'none';
+  }
 
   const bd = r.breakdown;
   document.getElementById('rc-breakdown').innerHTML = `
     <div class="rb-row"><span>Energie (${fmt(energy,4)} €/kWh)</span><span class="rb-val">${fmt(bd.energy)} €</span></div>
-    <div class="rb-row"><span>Netznutzung (6,98 ct)</span><span class="rb-val">${fmt(bd.netznutzung)} €</span></div>
+    <div class="rb-row"><span>Netznutzung (${fmt(r.netznutzung*100,2)} ct${snap ? ' ☀️ –20%' : ''})</span><span class="rb-val">${fmt(bd.netznutzung)} €</span></div>
     <div class="rb-row"><span>Netzverlust (0,70 ct)</span><span class="rb-val">${fmt(bd.netzverlust,3)} €</span></div>
     <div class="rb-row"><span>GAB ${settings.gebrauchsabgabe}% auf Energie+Netz</span><span class="rb-val">${fmt(bd.gabBetrag,3)} €</span></div>
     <div class="rb-row"><span>Förderbeitrag</span><span class="rb-val">${fmt(bd.foerderbeitrag,3)} €</span></div>
@@ -290,19 +321,26 @@ function updateCalc() {
 ['inp-kwh','inp-energy'].forEach(id => {
   document.getElementById(id).addEventListener('input', updateCalc);
 });
+['inp-date','inp-time'].forEach(id => {
+  document.getElementById(id).addEventListener('change', updateCalc);
+});
 
 function saveCharge() {
   const kwh = parseFloat(document.getElementById('inp-kwh').value);
   const energy = parseFloat(document.getElementById('inp-energy').value);
   const date = document.getElementById('inp-date').value;
+  const time = document.getElementById('inp-time').value;
+  const snap = isSnap(date, time);
 
   if(!kwh || kwh <= 0) return;
 
-  const r = calcTotal(kwh, energy);
+  const r = calcTotal(kwh, energy, snap);
 
   charges.push({
     id: Date.now().toString(36) + Math.random().toString(36).substr(2,4),
     date: date,
+    time: time || null,
+    snap: snap,
     kwh: kwh,
     energyPrice: energy,
     total: Math.round(r.total * 100) / 100,
@@ -369,6 +407,7 @@ function refreshDashboard() {
         <div class="lc-meta">
           <div class="tag"><div class="tag-label">Preis/kWh</div><div class="tag-value">${fmt(lc.bruttoPerKwh,2)} ct</div></div>
           <div class="tag"><div class="tag-label">Status</div><div class="tag-value" style="color:var(--green);">● Abgeschlossen</div></div>
+          ${lc.snap ? '<div class="tag"><div class="tag-label">Tarif</div><div class="tag-value" style="color:#16a34a;">☀️ SNAP –20%</div></div>' : ''}
         </div>
       </div>
     `;
@@ -396,7 +435,7 @@ function refreshDashboard() {
           <div style="display:flex;align-items:center;">
             <div class="hi-right">
               <div class="hi-cost">${fmt(c.total)} €</div>
-              <div class="hi-rate">${fmt(c.bruttoPerKwh*100,1)} ct/kWh</div>
+              <div class="hi-rate">${fmt(c.bruttoPerKwh*100,1)} ct/kWh${c.snap ? ' ☀️' : ''}</div>
             </div>
             <div class="hi-actions">
               <button class="hi-del" onclick="askDelete('${c.id}', ${c.kwh}, '${c.date}')" title="Löschen" aria-label="Ladevorgang löschen">
@@ -544,6 +583,15 @@ function renderInsights() {
     }
   } else if(thisMonthCharges.length > 0 && prevMonthKwh === 0) {
     insights.push(`<span class="insight-highlight">${fmt(thisMonthKwh,0)} kWh</span> diesen Monat geladen`);
+  }
+
+  // SNAP savings
+  const snapCharges = charges.filter(c => c.snap);
+  if(snapCharges.length > 0) {
+    const snapSavings = snapCharges.reduce((s, c) => {
+      return s + c.kwh * WIEN_TARIFFS.netznutzung_arbeit * WIEN_TARIFFS.snap_rabatt * (1 + settings.gebrauchsabgabe / 100) * (1 + settings.ust / 100);
+    }, 0);
+    insights.push(`☀️ Sommer-Nieder-Tarif: <span class="insight-highlight">–${fmt(snapSavings,2)} €</span> gespart (${snapCharges.length} Ladung${snapCharges.length !== 1 ? 'en' : ''})`);
   }
 
   // Total charges count
@@ -698,9 +746,12 @@ function processFile(file) {
           if(parts.length < Math.max(iStart, iKwh) + 1) continue;
           const startRaw = parts[iStart].trim();
           if(!startRaw) continue;
-          const dateParts = startRaw.split(' ')[0].split('.');
+          const startParts = startRaw.split(' ');
+          const dateParts = startParts[0].split('.');
           if(dateParts.length !== 3) continue;
           const date = `${dateParts[2]}-${dateParts[1].padStart(2,'0')}-${dateParts[0].padStart(2,'0')}`;
+          const time = startParts[1] ? startParts[1].slice(0, 5) : '';
+          const snap = isSnap(date, time);
           const kwh = parseFloat(parts[iKwh].trim().replace(',','.'));
           if(isNaN(kwh) || kwh <= 0) continue;
           const exists = charges.some(c => c.date === date && Math.abs(c.kwh - kwh) < 0.01);
@@ -708,10 +759,10 @@ function processFile(file) {
           const maxKw = iMaxKw >= 0 ? parseFloat(parts[iMaxKw].trim().replace(',','.')) : null;
           const dauer = iDauer >= 0 ? parts[iDauer].trim() : null;
           const ep = settings.defaultEnergy;
-          const r = calcTotal(kwh, ep);
+          const r = calcTotal(kwh, ep, snap);
           importPreview.push({
             id: Date.now().toString(36) + Math.random().toString(36).substr(2,5) + i,
-            date, kwh, energyPrice: ep,
+            date, time: time || null, snap, kwh, energyPrice: ep,
             total: Math.round(r.total*100)/100, bruttoPerKwh: r.bruttoPerKwh,
             source: 'go-e', maxKw, dauer,
             created: new Date().toISOString(),
