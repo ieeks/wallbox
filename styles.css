@@ -32,11 +32,11 @@ html[data-theme="dark"] {
   --surface-high: #1e1e1e;
   --surface-highest: #2a2a2a;
   --border: rgba(255,255,255,0.06);
-  --border-focus: rgba(193,95,60,0.4);
-  --text: #ededed;
+  --border-focus: rgba(249,158,11,0.4);
+  --text: #F59E0B;
   --text-secondary: #8a8a8a;
   --text-muted: #555;
-  --primary: #c15f3c;
+  --primary: #F59E0B;
   --primary-dim: rgba(193,95,60,0.16);
   --header-bg: rgba(13,13,13,0.85);
   --nav-bg: rgba(22,22,22,0.85);
@@ -78,9 +78,12 @@ header {
 .logo-icon {
   width: 36px; height: 36px; border-radius: 50%;
   background: var(--primary); display:flex; align-items:center; justify-content:center;
-  font-family:'Manrope'; font-weight:800; font-size:16px; color:#fff;
+  color: #fff; flex-shrink: 0;
 }
+.logo-icon svg { width: 20px; height: 20px; }
 .logo-text { font-family:'Manrope'; font-weight:800; font-size:20px; color:var(--primary); letter-spacing:-0.5px; }
+
+html[data-theme="dark"] .logo-icon { background: var(--surface-high); color: #F59E0B; }
 
 header button {
   background:none; border:none; color:var(--text-secondary); cursor:pointer;
