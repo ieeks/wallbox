@@ -120,10 +120,10 @@ async function run() {
   const ust_pct      = fsSettings.ust               || WIEN_TARIFFS.ust_pct;
   console.log(`settings: energyPrice=${energyPrice} | gab=${gab_pct}% | ust=${ust_pct}%`);
 
-  // Duplikat-Check: lch identisch mit letzter gespeicherter Session
-  const last = data.lastProcessedSession;
-  if (last && last.lch === lch) {
-    console.log(`Session bereits verarbeitet: lch=${lch} – übersprungen.`);
+  // Duplikat-Check: lch in bestehenden charges suchen
+  // Wenn Eintrag gelöscht wurde, ist lch nicht mehr in charges → wird neu importiert
+  if (existing.some(c => c.lch === lch)) {
+    console.log(`Session bereits in charges: lch=${lch} – übersprungen.`);
     return;
   }
 
@@ -156,18 +156,16 @@ async function run() {
     total,
     bruttoPerKwh,
     source:       'go-e-auto',
+    lch,
     maxKw,
     dauer,
     dauerGesamt:  null,
     created:      new Date().toISOString(),
   };
 
-  // 6. In Firestore speichern + lastProcessedSession setzen
+  // 6. In Firestore speichern
   const updated = [entry, ...existing].sort((a, b) => b.date.localeCompare(a.date));
-  await docRef.set({
-    charges: updated,
-    lastProcessedSession: { date, kwh, lch },
-  }, { merge: true });
+  await docRef.set({ charges: updated }, { merge: true });
 
   console.log(`✅ Gespeichert: ${date} ${time} | ${kwh} kWh | ${total} € | bruttoPerKwh=${bruttoPerKwh} | SNAP=${snap}`);
 }
