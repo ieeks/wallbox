@@ -446,7 +446,7 @@ function refreshDashboard() {
         </div>
         <div class="lc-meta">
           <div class="tag"><div class="tag-label">Preis/kWh</div><div class="tag-value">${fmt(lc.bruttoPerKwh,2)} ct</div></div>
-          <div class="tag"><div class="tag-label">Status</div><div class="tag-value" style="color:var(--green);">● Abgeschlossen</div></div>
+          <div class="tag"><div class="tag-label">Status</div><div class="tag-value" style="color:var(--green);white-space:nowrap;">● Abgeschlossen</div></div>
           ${lc.snap ? '<div class="tag"><div class="tag-label">Tarif</div><div class="tag-value" style="color:#16a34a;">☀️ SNAP –20%</div></div>' : ''}
           ${savingChipHTML(lc.kwh)}
         </div>
