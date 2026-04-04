@@ -242,8 +242,8 @@ function calcSavingChip(kwh) {
   const wallbox = r.total;
 
   const savings = [
-    { label: '⚡ Tesla', saving: costTesla - wallbox },
-    { label: '🔵 Tanke', saving: costTanke - wallbox },
+    { label: 'Tesla', saving: costTesla - wallbox },
+    { label: 'Tanke', saving: costTanke - wallbox },
   ];
 
   return savings.reduce((a, b) => a.saving > b.saving ? a : b);
@@ -254,7 +254,7 @@ function savingChipHTML(kwh) {
   if (best.saving <= 0) return '';
   return `<div class="tag saving-chip">
     <div class="tag-label">Ersparnis</div>
-    <div class="tag-value" style="color:var(--green);">${best.label}: +${fmt(best.saving)} €</div>
+    <div class="tag-value" style="color:var(--green);font-size:11px;">${best.label}: +${fmt(best.saving)} €</div>
   </div>`;
 }
 
@@ -778,6 +778,7 @@ function processFile(file) {
         const iKwh = cols.findIndex(c => c.includes('energie'));
         const iMaxKw = cols.findIndex(c => c.includes('max. leistung'));
         const iDauer = cols.findIndex(c => c.includes('dauer gesamt'));
+        const iDauerAktiv = cols.findIndex(c => c.includes('dauer aktiver stromfluss'));
 
         if(iStart === -1 || iKwh === -1) {
           showToast('go-e CSV erkannt, aber Spalten fehlen');
@@ -800,14 +801,15 @@ function processFile(file) {
           const exists = charges.some(c => c.date === date && Math.abs(c.kwh - kwh) < 0.01);
           if(exists) continue;
           const maxKw = iMaxKw >= 0 ? parseFloat(parts[iMaxKw].trim().replace(',','.')) : null;
-          const dauer = iDauer >= 0 ? parts[iDauer].trim() : null;
+          const dauerGesamt = iDauer >= 0 ? parts[iDauer].trim() : null;
+          const dauer = iDauerAktiv >= 0 ? parts[iDauerAktiv].trim() : null;
           const ep = settings.defaultEnergy;
           const r = calcTotal(kwh, ep, snap);
           importPreview.push({
             id: Date.now().toString(36) + Math.random().toString(36).substr(2,5) + i,
             date, time: time || null, snap, kwh, energyPrice: ep,
             total: Math.round(r.total*100)/100, bruttoPerKwh: r.bruttoPerKwh,
-            source: 'go-e', maxKw, dauer,
+            source: 'go-e', maxKw, dauer, dauerGesamt,
             created: new Date().toISOString(),
           });
         }
