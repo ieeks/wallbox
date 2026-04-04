@@ -72,6 +72,9 @@ let settings = JSON.parse(localStorage.getItem('lf_settings') || 'null') || {
   comp_tanke_kwh: 0.39,
   comp_tanke_zeit_min: 0.069,
   comp_tanke_zeit_abo_monat: 4.90,
+  comp_benzin_verbrauch_l: 8.2,
+  comp_ev_verbrauch_kwh: 20.0,
+  comp_benzin_preis: 1.80,
 };
 settings = {
   comp_tesla_kwh: 0.48,
@@ -79,6 +82,9 @@ settings = {
   comp_tanke_kwh: 0.39,
   comp_tanke_zeit_min: 0.069,
   comp_tanke_zeit_abo_monat: 4.90,
+  comp_benzin_verbrauch_l: 8.2,
+  comp_ev_verbrauch_kwh: 20.0,
+  comp_benzin_preis: 1.80,
   ...settings,
 };
 let currentPeriod = 'month';
@@ -97,6 +103,45 @@ function applyTheme() {
   const headerToggle = document.getElementById('theme-toggle-header');
   if (headerToggle) {
     headerToggle.checked = (settings.theme || 'light') === 'light';
+  }
+}
+
+// =====================================================================
+// E-CONTROL SPRITPREIS API – Median der günstigsten Tankstellen Wien
+// =====================================================================
+async function fetchBenzinpreis() {
+  try {
+    const url = 'https://api.e-control.at/sprit/1.0/search/gas-stations/by-address' +
+      '?latitude=48.2082&longitude=16.3738&fuelType=SUP&includeClosed=false';
+    const res = await fetch(url);
+    if (!res.ok) return;
+    const stations = await res.json();
+
+    const prices = [];
+    stations.forEach(s => {
+      if (s.prices) {
+        s.prices.forEach(p => {
+          if (p.fuelType === 'SUP' && p.amount > 0) prices.push(p.amount);
+        });
+      }
+    });
+
+    if (prices.length === 0) return;
+
+    prices.sort((a, b) => a - b);
+    const mid = Math.floor(prices.length / 2);
+    const median = prices.length % 2 !== 0
+      ? prices[mid]
+      : (prices[mid - 1] + prices[mid]) / 2;
+
+    settings.comp_benzin_preis = Math.round(median * 1000) / 1000;
+
+    const badge = document.getElementById('benzin-preis-badge');
+    if (badge) badge.textContent = 'ℹ️ Benzinpreis: ' + fmt(settings.comp_benzin_preis, 3) + ' €/L (E-Control Wien)';
+
+    renderSavings();
+  } catch (e) {
+    console.log('E-Control API nicht erreichbar, Fallback auf gespeicherten Preis');
   }
 }
 
@@ -932,6 +977,9 @@ function toggleSettings() {
     document.getElementById('set-tanke-kwh').value = settings.comp_tanke_kwh;
     document.getElementById('set-tanke-min').value = settings.comp_tanke_zeit_min;
     document.getElementById('set-tanke-abo').value = settings.comp_tanke_zeit_abo_monat;
+    document.getElementById('set-benzin-l').value = settings.comp_benzin_verbrauch_l;
+    document.getElementById('set-ev-kwh').value = settings.comp_ev_verbrauch_kwh;
+    document.getElementById('set-benzin-preis').value = settings.comp_benzin_preis;
     m.classList.add('show');
   }
 }
@@ -945,6 +993,9 @@ function saveSettings() {
   settings.comp_tanke_kwh = parseFloat(document.getElementById('set-tanke-kwh').value) || 0.39;
   settings.comp_tanke_zeit_min = parseFloat(document.getElementById('set-tanke-min').value) || 0.069;
   settings.comp_tanke_zeit_abo_monat = parseFloat(document.getElementById('set-tanke-abo').value) || 4.90;
+  settings.comp_benzin_verbrauch_l = parseFloat(document.getElementById('set-benzin-l').value) || 8.2;
+  settings.comp_ev_verbrauch_kwh = parseFloat(document.getElementById('set-ev-kwh').value) || 20.0;
+  settings.comp_benzin_preis = parseFloat(document.getElementById('set-benzin-preis').value) || 1.80;
   applyTheme();
   persist();
   toggleSettings();
@@ -1066,6 +1117,39 @@ function renderSavings() {
       <div style="font-size:13px;color:var(--text-muted);padding:8px 0;">Ladezeit nicht verfügbar<br>(go-e CSV mit "Dauer aktiver Stromfluss" importieren)</div>
     </div>`;
   }
+  // Benzin-Vergleich
+  const kmEV = totalKwh / (s.comp_ev_verbrauch_kwh / 100);
+  const costBenzin = kmEV * (s.comp_benzin_verbrauch_l / 100) * s.comp_benzin_preis;
+  const savingBenzin = costBenzin - totalCost;
+  html += `
+    <div class="savings-card">
+      <div class="sc-header">
+        <span class="sc-icon">⛽</span>
+        <span class="sc-label">Tiguan (Benzin)</span>
+      </div>
+      <div class="sc-row">
+        <span class="sc-key">Gefahrene km (geschätzt)</span>
+        <span class="sc-val">${fmt(kmEV, 0)} km</span>
+      </div>
+      <div class="sc-row">
+        <span class="sc-key">Benzinkosten (${fmt(s.comp_benzin_verbrauch_l, 1)}L/100km)</span>
+        <span class="sc-val">${fmt(costBenzin)} €</span>
+      </div>
+      <div class="sc-row">
+        <span class="sc-key">Kosten Wallbox</span>
+        <span class="sc-val">${fmt(totalCost)} €</span>
+      </div>
+      <div class="sc-divider"></div>
+      <div class="sc-row sc-saving" style="color:${savingBenzin > 0 ? 'var(--green)' : '#ef4444'}">
+        <span>${savingBenzin > 0 ? '✓ Du sparst' : '✗ Du zahlst mehr'}</span>
+        <span>${savingBenzin > 0 ? '↓' : '↑'} ${fmt(Math.abs(savingBenzin))} €</span>
+      </div>
+      <div class="sc-abo" id="benzin-preis-badge">
+        ℹ️ Benzinpreis: ${fmt(s.comp_benzin_preis, 3)} €/L (E-Control Wien)
+      </div>
+    </div>
+  `;
+
   html += `</div>`;
   area.innerHTML = html;
 }
@@ -1076,3 +1160,4 @@ function renderSavings() {
 initAddPage();
 initImport();
 refreshDashboard();
+fetchBenzinpreis();
