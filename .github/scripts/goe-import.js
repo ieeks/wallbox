@@ -88,25 +88,8 @@ async function run() {
   // 2. Relevante Felder loggen
   const car = status.car;
   const wh  = status.wh  ?? 0;
-  const lch = status.lch ?? null; // last charge timestamp
-  const lcs = status.lcs ?? null; // seconds since reboot (kein Session-Objekt)
-  const dll = status.dll ?? null; // download URL (CSV history?)
-  console.log(`car=${car} | wh=${wh} | lch=${lch} | lcs=${lcs} | dll=${dll}`);
-
-  // dll-URL untersuchen: abrufen und ersten Teil loggen
-  if (dll) {
-    try {
-      const dllRes = await fetch(dll, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const contentType = dllRes.headers.get('content-type') || '';
-      const preview = (await dllRes.text()).slice(0, 500);
-      console.log(`dll content-type: ${contentType}`);
-      console.log(`dll preview:\n${preview}`);
-    } catch (e) {
-      console.log(`dll fetch error: ${e.message}`);
-    }
-  }
+  const lch = status.lch ?? null; // Sekunden seit Neustart – als Session-ID geeignet
+  console.log(`car=${car} | wh=${wh} | lch=${lch}`);
 
   // 3. Neue Session erkennen: car==1 (idle/abgesteckt) + wh > 0 + lch neu
   if (car !== 1) {
@@ -120,7 +103,7 @@ async function run() {
   }
 
   if (!lch) {
-    console.log('Kein lch-Timestamp vorhanden – ignoriert.');
+    console.log('Kein lch-Wert vorhanden – ignoriert.');
     return;
   }
 
@@ -131,17 +114,17 @@ async function run() {
   const data = docSnap.exists ? docSnap.data() : {};
   const existing = data.charges || [];
 
-  // Duplikat-Check: lch-Timestamp identisch mit letzter gespeicherter Session
+  // Duplikat-Check: lch identisch mit letzter gespeicherter Session
   const last = data.lastProcessedSession;
   if (last && last.lch === lch) {
     console.log(`Session bereits verarbeitet: lch=${lch} – übersprungen.`);
     return;
   }
 
-  // Datum/Uhrzeit aus lch (Unix-Timestamp in Sekunden)
-  const sessionTime = new Date(lch * 1000);
-  const date = sessionTime.toISOString().slice(0, 10); // YYYY-MM-DD
-  const time = sessionTime.toTimeString().slice(0, 5);  // HH:MM
+  // Datum/Uhrzeit: Erkennungszeitpunkt (lch ist kein Unix-Epoch, sondern Uptime)
+  const now  = new Date();
+  const date = now.toISOString().slice(0, 10); // YYYY-MM-DD
+  const time = now.toTimeString().slice(0, 5);  // HH:MM
 
   // 5. Kosten berechnen
   const snap = isSnap(date, time);
