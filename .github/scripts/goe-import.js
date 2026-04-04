@@ -85,23 +85,24 @@ async function run() {
 
   const status = await res.json();
 
-  // 2. Nur speichern wenn Ladung abgeschlossen (car === 4)
-  if (status.car !== 4) {
-    console.log(`Status car=${status.car} – keine abgeschlossene Ladung, nichts zu tun.`);
+  // 2. lcs (last charging session) auslesen – persistiert auch nach Abstecken
+  const lcs = status.lcs;
+  if (!lcs || typeof lcs !== 'object') {
+    console.log('Kein lcs vorhanden – noch keine abgeschlossene Ladung.');
     return;
   }
 
-  const wh  = status.wh  ?? 0;
-  const cdi = status.cdi ?? 0; // Ladedauer in ms (aktiver Stromfluss)
+  const wh  = lcs.wh  ?? 0;
+  const cdi = lcs.cdi ?? 0; // aktive Ladedauer in ms
 
   if (wh < 10) {
-    console.log(`wh=${wh} zu gering – ignoriert.`);
+    console.log(`lcs.wh=${wh} zu gering – ignoriert.`);
     return;
   }
 
   const kwh = Math.round((wh / 1000) * 1000) / 1000;
 
-  // Ladezeit für Datum/Uhrzeit: jetzt minus Ladedauer
+  // Datum/Uhrzeit: Erkennungszeitpunkt minus aktive Ladedauer
   const endTime   = new Date();
   const startTime = new Date(endTime.getTime() - cdi);
 
@@ -114,10 +115,11 @@ async function run() {
   const data = docSnap.exists ? docSnap.data() : {};
   const existing = data.charges || [];
 
-  // Duplikat-Check 1: lastProcessedSession verhindert Re-Import nach Löschung
+  // Duplikat-Check 1: lastProcessedSession via exaktem lcs.wh-Wert
+  // Verhindert Re-Import nach Löschung und während Auto noch angeschlossen bleibt
   const last = data.lastProcessedSession;
-  if (last && last.date === date && Math.abs(last.kwh - kwh) < 0.05) {
-    console.log(`Session bereits verarbeitet: ${date} ${kwh} kWh – übersprungen.`);
+  if (last && last.lcsWh === wh) {
+    console.log(`Session bereits verarbeitet: lcs.wh=${wh} – übersprungen.`);
     return;
   }
 
@@ -154,7 +156,7 @@ async function run() {
   const updated = [entry, ...existing].sort((a, b) => b.date.localeCompare(a.date));
   await docRef.set({
     charges: updated,
-    lastProcessedSession: { date, kwh },
+    lastProcessedSession: { date, kwh, lcsWh: wh },
   }, { merge: true });
 
   console.log(`✅ Gespeichert: ${date} ${kwh} kWh → ${r.total} € (SNAP: ${snap})`);
