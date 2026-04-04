@@ -254,7 +254,7 @@ function savingChipHTML(kwh) {
   if (best.saving <= 0) return '';
   return `<div class="tag saving-chip">
     <div class="tag-label">Ersparnis</div>
-    <div class="tag-value" style="color:var(--green);">–${fmt(best.saving)} €</div>
+    <div class="tag-value" style="color:var(--green);">${best.label}: +${fmt(best.saving)} €</div>
   </div>`;
 }
 
@@ -477,7 +477,7 @@ function refreshDashboard() {
             <div class="hi-right">
               <div class="hi-cost">${fmt(c.total)} €</div>
               <div class="hi-rate">${fmt(c.bruttoPerKwh*100,1)} ct/kWh${c.snap ? ' ☀️' : ''}</div>
-              <div class="hi-saving">${(() => { const b = calcSavingChip(c.kwh); return b.saving > 0 ? `${b.label} –${fmt(b.saving)} €` : ''; })()}</div>
+              <div class="hi-saving">${(() => { const b = calcSavingChip(c.kwh); return b.saving > 0 ? `${b.label}: +${fmt(b.saving)} €` : ''; })()}</div>
             </div>
             <div class="hi-actions">
               <button class="hi-del" onclick="askDelete('${c.id}', ${c.kwh}, '${c.date}')" title="Löschen" aria-label="Ladevorgang löschen">
