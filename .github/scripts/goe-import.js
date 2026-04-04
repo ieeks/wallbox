@@ -132,10 +132,10 @@ async function run() {
   const [date, time] = viennaFormatter.format(now).split(' ');
   // date = YYYY-MM-DD, time = HH:MM
 
-  // 5. Kosten berechnen
-  const snap = isSnap(date, time);
-  const bruttoPerKwh = parseFloat(process.env.GOE_BRUTTO_KWH) || 0.287;
-  const total = Math.round(kwh * bruttoPerKwh * 100) / 100;
+  // 5. Kosten berechnen (identisch mit calcTotal() in script.js; snap=false da Uhrzeit nicht zuverlässig)
+  const snap = false;
+  const r = calcTotal(kwh, DEFAULT_ENERGY_PRICE, false);
+  const { total, bruttoPerKwh } = r;
 
   const cdi = status.cdi ?? 0;
   const dauer  = cdi > 0 ? msToHMS(cdi) : null;

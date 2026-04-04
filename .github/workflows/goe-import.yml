@@ -24,5 +24,4 @@ jobs:
           GOE_SERIAL: ${{ secrets.GOE_SERIAL }}
           GOE_TOKEN: ${{ secrets.GOE_TOKEN }}
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          GOE_BRUTTO_KWH: "0.287"
         run: node .github/scripts/goe-import.js
