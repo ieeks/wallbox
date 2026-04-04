@@ -224,6 +224,33 @@ function calcTotal(kwh, energyPrice, snap = false) {
 }
 
 // =====================================================================
+// SAVINGS CHIP – Ersparnis vs. günstigster Alternative pro Ladung
+// =====================================================================
+function calcSavingChip(kwh) {
+  const costTesla = kwh * settings.comp_tesla_kwh;
+  const costTanke = kwh * settings.comp_tanke_kwh;
+
+  const r = calcTotal(kwh, settings.defaultEnergy, false);
+  const wallbox = r.total;
+
+  const savings = [
+    { label: '⚡ Tesla', saving: costTesla - wallbox },
+    { label: '🔵 Tanke', saving: costTanke - wallbox },
+  ];
+
+  return savings.reduce((a, b) => a.saving > b.saving ? a : b);
+}
+
+function savingChipHTML(kwh) {
+  const best = calcSavingChip(kwh);
+  if (best.saving <= 0) return '';
+  return `<div class="tag saving-chip">
+    <div class="tag-label">Ersparnis</div>
+    <div class="tag-value" style="color:var(--green);">–${fmt(best.saving)} €</div>
+  </div>`;
+}
+
+// =====================================================================
 // FORMAT HELPERS
 // =====================================================================
 const fmt = (n, d=2) => n.toLocaleString('de-AT', {minimumFractionDigits:d, maximumFractionDigits:d});
@@ -413,6 +440,7 @@ function refreshDashboard() {
           <div class="tag"><div class="tag-label">Preis/kWh</div><div class="tag-value">${fmt(lc.bruttoPerKwh,2)} ct</div></div>
           <div class="tag"><div class="tag-label">Status</div><div class="tag-value" style="color:var(--green);">● Abgeschlossen</div></div>
           ${lc.snap ? '<div class="tag"><div class="tag-label">Tarif</div><div class="tag-value" style="color:#16a34a;">☀️ SNAP –20%</div></div>' : ''}
+          ${savingChipHTML(lc.kwh)}
         </div>
       </div>
     `;
@@ -441,6 +469,7 @@ function refreshDashboard() {
             <div class="hi-right">
               <div class="hi-cost">${fmt(c.total)} €</div>
               <div class="hi-rate">${fmt(c.bruttoPerKwh*100,1)} ct/kWh${c.snap ? ' ☀️' : ''}</div>
+              <div class="hi-saving">${(() => { const b = calcSavingChip(c.kwh); return b.saving > 0 ? `${b.label} –${fmt(b.saving)} €` : ''; })()}</div>
             </div>
             <div class="hi-actions">
               <button class="hi-del" onclick="askDelete('${c.id}', ${c.kwh}, '${c.date}')" title="Löschen" aria-label="Ladevorgang löschen">

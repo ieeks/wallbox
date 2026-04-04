@@ -740,3 +740,14 @@ nav {
 .settings-section-title {
   padding: 4px 0 8px;
 }
+
+/* Saving Chip in lc-meta */
+.saving-chip .tag-label { color: var(--green); }
+.saving-chip .tag-value { font-weight: 600; }
+
+/* Saving in History-Liste */
+.hi-saving {
+  font-size: 11px;
+  color: var(--green);
+  margin-top: 1px;
+}
