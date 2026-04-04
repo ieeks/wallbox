@@ -86,10 +86,12 @@ async function run() {
   const status = await res.json();
 
   // 2. Relevante Felder loggen
-  const car = status.car;
-  const wh  = status.wh  ?? 0;
-  const lch = status.lch ?? null; // Sekunden seit Neustart – als Session-ID geeignet
-  console.log(`car=${car} | wh=${wh} | lch=${lch}`);
+  const car   = status.car;
+  const wh    = status.wh    ?? 0;
+  const lch   = status.lch   ?? null; // ms seit Boot – Session-ID
+  const rbt   = status.rbt   ?? null; // ms seit Boot (aktuell)
+  const lccfc = status.lccfc ?? null; // ms seit Boot: lastCarStateChangedFromCharging
+  console.log(`car=${car} | wh=${wh} | lch=${lch} | rbt=${rbt} | lccfc=${lccfc}`);
 
   // 3. Neue Session erkennen: car==1 (idle/abgesteckt) + wh > 0 + lch neu
   if (car !== 1) {
@@ -127,18 +129,23 @@ async function run() {
     return;
   }
 
-  // Datum/Uhrzeit: Erkennungszeitpunkt in Vienna-Zeitzone
+  // Datum/Uhrzeit: exakter Session-Endzeitpunkt via rbt + lccfc
+  // lccfc = ms seit Boot als die Ladung endete → now - (rbt - lccfc) = echter Endzeitpunkt
   const now = new Date();
+  const sessionEnd = (rbt !== null && lccfc !== null)
+    ? new Date(now.getTime() - (rbt - lccfc))
+    : now;
   const viennaFormatter = new Intl.DateTimeFormat('sv-SE', {
     timeZone: 'Europe/Vienna',
     year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit',
   });
-  const [date, time] = viennaFormatter.format(now).split(' ');
+  const [date, time] = viennaFormatter.format(sessionEnd).split(' ');
   // date = YYYY-MM-DD, time = HH:MM
+  console.log(`sessionEnd=${sessionEnd.toISOString()} | date=${date} | time=${time}`);
 
-  // 5. Kosten berechnen mit Settings aus Firestore (snap=false da Uhrzeit nicht zuverlässig)
-  const snap = false;
+  // 5. Kosten berechnen mit Settings aus Firestore inkl. SNAP-Erkennung
+  const snap = isSnap(date, time);
   const r = calcTotal(kwh, energyPrice, false, gab_pct, ust_pct);
   const { total, bruttoPerKwh } = r;
 
