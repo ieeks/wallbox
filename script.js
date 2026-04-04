@@ -1028,11 +1028,10 @@ function renderSavings() {
     aboTankeZeit = s.comp_tanke_zeit_abo_monat * months;
   }
 
-  function savingCard(label, icon, altCost, saving, aboCost, aboLabel) {
+  function savingCard(label, icon, altCost, saving) {
     const positive = saving > 0;
     const color = positive ? 'var(--green)' : '#ef4444';
     const arrow = positive ? '↓' : '↑';
-    const periodLabel = currentPeriod === 'month' ? 'Monat' : currentPeriod === 'year' ? 'Jahr' : 'Zeitraum';
     return `
       <div class="savings-card">
         <div class="sc-header">
@@ -1052,28 +1051,19 @@ function renderSavings() {
           <span>${positive ? '✓ Du sparst' : '✗ Du zahlst mehr'}</span>
           <span>${arrow} ${fmt(Math.abs(saving))} €</span>
         </div>
-        ${aboCost !== undefined ? `
-        <div class="sc-abo">
-          <span class="sc-abo-label">+ Abo (${aboLabel || periodLabel})</span>
-          <span class="sc-abo-val">${fmt(aboCost)} €</span>
-        </div>
-        <div class="sc-abo sc-abo-total" style="color:${(saving - aboCost) > 0 ? 'var(--green)' : '#ef4444'}">
-          <span>Netto-Ersparnis inkl. Abo</span>
-          <span>${(saving - aboCost) > 0 ? '↓' : '↑'} ${fmt(Math.abs(saving - aboCost))} €</span>
-        </div>` : ''}
       </div>
     `;
   }
 
   let html = `<div class="savings-grid">`;
-  html += savingCard('Tesla Supercharger', '⚡', costTesla, savingTesla, aboTesla);
+  html += savingCard('Tesla Supercharger', '⚡', costTesla, savingTesla);
   html += savingCard('Tanke Wien kWh', '🔵', costTankeKwh, savingTankeKwh);
   if (hasZeit && costTankeZeit !== null) {
-    html += savingCard('Tanke Wien Zeit', '🕐', costTankeZeit, savingTankeZeit, aboTankeZeit);
+    html += savingCard('Tanke Wien Zeit', '🕐', costTankeZeit, savingTankeZeit);
   } else {
     html += `<div class="savings-card sc-disabled">
       <div class="sc-header"><span class="sc-icon">🕐</span><span class="sc-label">Tanke Wien Zeit</span></div>
-      <div style="font-size:13px;color:var(--text-muted);padding:8px 0;">Ladezeit nicht verfügbar<br>(go-e CSV mit "Dauer gesamt" importieren)</div>
+      <div style="font-size:13px;color:var(--text-muted);padding:8px 0;">Ladezeit nicht verfügbar<br>(go-e CSV mit "Dauer aktiver Stromfluss" importieren)</div>
     </div>`;
   }
   html += `</div>`;
