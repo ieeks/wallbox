@@ -73,6 +73,14 @@ let settings = JSON.parse(localStorage.getItem('lf_settings') || 'null') || {
   comp_tanke_zeit_min: 0.069,
   comp_tanke_zeit_abo_monat: 4.90,
 };
+settings = {
+  comp_tesla_kwh: 0.48,
+  comp_tesla_abo_jahr: 99.00,
+  comp_tanke_kwh: 0.39,
+  comp_tanke_zeit_min: 0.069,
+  comp_tanke_zeit_abo_monat: 4.90,
+  ...settings,
+};
 let currentPeriod = 'month';
 
 // =====================================================================
