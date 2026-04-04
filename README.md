@@ -1,4 +1,4 @@
-# 🦊 Ladefuchs
+# Wallbox – E-Auto Lade-Dashboard
 
 **Persönliches E-Auto Lade-Dashboard für Wien.**
 
@@ -11,12 +11,15 @@ Berechnet die echten Kosten jeder Ladung inkl. aller Wiener Netzentgelte, Abgabe
 ## Features
 
 - **Exakte Kostenberechnung** – Netznutzung, Netzverlust, Förderbeitrag, Elektrizitätsabgabe, Gebrauchsabgabe (7%), USt (20%)
-- **Sommer-Nieder-Arbeitspreis (SNAP)** – automatische Erkennung: Apr–Sep, 10–16 Uhr → –20% auf Netznutzungsentgelt; Ersparnis wird live angezeigt
-- **Dashboard** mit Monats-/Jahres-/Gesamtübersicht, Verlaufs-Chart und letzter Ladung
-- **CSV/JSON Import** für Bulk-Einträge (z.B. go-e Wallbox Export) – Startzeit wird automatisch für SNAP-Berechnung verwendet
-- **Cloud Sync** via Firebase – Google Login, automatische Sicherung
+- **Sommer-Nieder-Arbeitspreis (SNAP)** – automatische Erkennung: Apr–Sep, 10–16 Uhr → –20% auf Netznutzungsentgelt
+- **Ersparnis-Vergleich** – Dashboard zeigt Ersparnis vs. Tesla Supercharger und Tanke Wien (kWh- und Zeittarif)
+- **Ersparnis-Chip** – jede Ladung in der History zeigt die Ersparnis gegenüber der günstigsten Alternative
+- **go-e Auto-Import** – GitHub Action pollt alle 15 min die go-e Cloud API und speichert abgeschlossene Ladungen automatisch in Firestore
+- **CSV Import** – manueller Bulk-Import aus go-e Wallbox Export (inkl. Ladezeit für Zeittarif-Vergleich)
+- **Dashboard** – Monats-/Jahres-/Gesamtübersicht, Verlaufs-Chart, letzte Ladung
+- **Cloud Sync** via Firebase Firestore – automatische Sicherung, geräteübergreifend
 - **Offline-fähig** – funktioniert auch ohne Internet über localStorage
-- **Mobile-first** – Dark Mode, Swipe-to-Delete, PWA-ready
+- **Mobile-first** – Dark Mode, Swipe-to-Delete
 
 ## Wiener Tarife 2026
 
@@ -41,19 +44,37 @@ Quelle: [Wiener Netze Preisblätter](https://www.wienernetze.at/stromnetzbedingu
 
 Quelle: [E-Control](https://www.e-control.at/sommer-nieder-arbeitspreis). Wird automatisch angewendet – kein Opt-in nötig.
 
+## go-e Auto-Import
+
+Die GitHub Action `.github/workflows/goe-import.yml` läuft alle 15 Minuten und importiert abgeschlossene Ladungen automatisch.
+
+**Benötigte GitHub Secrets:**
+
+| Secret | Beschreibung |
+|---|---|
+| `GOE_SERIAL` | 6-stellige go-e Seriennummer |
+| `GOE_TOKEN` | Bearer Token aus go-e Cloud |
+| `FIREBASE_SERVICE_ACCOUNT` | Service Account JSON (Firebase Console → Projekteinstellungen → Dienstkonten) |
+
+**Funktionsweise:**
+- `car === 4` + `wh > 10` → abgeschlossene Ladung erkannt
+- Duplikat-Schutz via `lastProcessedSession` in Firestore (verhindert Re-Import nach Löschung)
+- Kosten werden mit denselben Wiener Tarifen berechnet wie die App
+- `source: 'go-e-auto'` zur Unterscheidung von manuellen Einträgen
+
 ## Setup
 
-Die App ist eine einzelne HTML-Datei – kein Build-Prozess, kein Framework.
+Keine Build-Schritte, kein Framework – reines HTML/CSS/JS.
 
-**Ohne Cloud:** Einfach `index.html` öffnen. Daten werden in localStorage gespeichert.
+**Ohne Cloud:** `index.html` direkt öffnen. Daten in localStorage.
 
-**Mit Cloud:** Firebase-Projekt anlegen und Config einsetzen → siehe [FIREBASE-SETUP.md](FIREBASE-SETUP.md).
+**Mit Cloud:** Firebase-Projekt anlegen, Config in `script.js` eintragen, Firestore-Regeln setzen.
 
 ## Tech Stack
 
 - Vanilla HTML/CSS/JS
-- Tailwind-inspiriertes Custom CSS
-- Firebase Auth + Firestore (optional)
+- Firebase Firestore (Cloud Sync)
+- GitHub Actions (go-e Auto-Import)
 - Fonts: Manrope + Inter
 
 ## Lizenz
