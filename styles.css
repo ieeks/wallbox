@@ -677,3 +677,66 @@ nav {
 .theme-switch-header input:checked + .theme-slider::after {
   transform: translateX(18px);
 }
+
+/* === SAVINGS COMPARISON === */
+.savings-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.savings-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px 16px;
+}
+.sc-disabled {
+  opacity: 0.55;
+}
+.sc-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 15px;
+  margin-bottom: 10px;
+}
+.sc-icon { font-size: 18px; }
+.sc-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+.sc-val { font-variant-numeric: tabular-nums; }
+.sc-divider {
+  border-top: 1px solid var(--border);
+  margin: 8px 0;
+}
+.sc-saving {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--green);
+}
+.sc-abo {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border);
+}
+.sc-abo-total {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--green);
+  border-top: none;
+  margin-top: 2px;
+  padding-top: 0;
+}
+.settings-section-title {
+  padding: 4px 0 8px;
+}

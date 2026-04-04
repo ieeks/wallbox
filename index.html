@@ -72,6 +72,9 @@
 
     <div id="insight-area"></div>
 
+    <div class="section-title">Ersparnis vs. Alternativen</div>
+    <div id="savings-area"></div>
+
     <div class="section-title">Verlauf</div>
     <div class="chart-container">
       <div class="chart-header">
@@ -261,6 +264,27 @@
     <div class="setting-row">
       <div class="setting-label">USt<small>% (Standard: 20%)</small></div>
       <div class="setting-input"><input type="number" id="set-ust" step="0.1" inputmode="decimal"/></div>
+    </div>
+    <div class="settings-section-title" style="margin-top:16px;font-weight:600;font-size:13px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.5px;">Vergleichspreise</div>
+    <div class="setting-row">
+      <div class="setting-label">Tesla Supercharger<small>€/kWh</small></div>
+      <div class="setting-input"><input type="number" id="set-tesla-kwh" step="0.01" min="0" inputmode="decimal"/></div>
+    </div>
+    <div class="setting-row">
+      <div class="setting-label">Tesla Jahres-Abo<small>€/Jahr</small></div>
+      <div class="setting-input"><input type="number" id="set-tesla-abo" step="1" min="0" inputmode="decimal"/></div>
+    </div>
+    <div class="setting-row">
+      <div class="setting-label">Tanke Wien kWh-Tarif<small>€/kWh</small></div>
+      <div class="setting-input"><input type="number" id="set-tanke-kwh" step="0.01" min="0" inputmode="decimal"/></div>
+    </div>
+    <div class="setting-row">
+      <div class="setting-label">Tanke Wien Zeit<small>€/min</small></div>
+      <div class="setting-input"><input type="number" id="set-tanke-min" step="0.001" min="0" inputmode="decimal"/></div>
+    </div>
+    <div class="setting-row">
+      <div class="setting-label">Tanke Wien Zeit Monats-Abo<small>€/Monat</small></div>
+      <div class="setting-input"><input type="number" id="set-tanke-abo" step="0.10" min="0" inputmode="decimal"/></div>
     </div>
     <button class="btn-save" onclick="saveSettings()" style="margin-top:20px;">Einstellungen speichern</button>
     <button class="btn-danger" onclick="if(confirm('Alle Daten löschen? (lokal + Cloud)')){clearAllData();}">

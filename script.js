@@ -67,6 +67,11 @@ let settings = JSON.parse(localStorage.getItem('lf_settings') || 'null') || {
   gebrauchsabgabe: WIEN_TARIFFS.gebrauchsabgabe_pct,
   ust: WIEN_TARIFFS.ust_pct,
   theme: 'light',
+  comp_tesla_kwh: 0.48,
+  comp_tesla_abo_jahr: 99.00,
+  comp_tanke_kwh: 0.39,
+  comp_tanke_zeit_min: 0.069,
+  comp_tanke_zeit_abo_monat: 4.90,
 };
 let currentPeriod = 'month';
 
@@ -456,6 +461,7 @@ function refreshDashboard() {
   // Chart
   renderChart(filtered);
   renderInsights();
+  renderSavings();
 }
 
 let pendingDeleteId = null;
@@ -882,6 +888,11 @@ function toggleSettings() {
     document.getElementById('set-energy').value = settings.defaultEnergy;
     document.getElementById('set-gab').value = settings.gebrauchsabgabe;
     document.getElementById('set-ust').value = settings.ust;
+    document.getElementById('set-tesla-kwh').value = settings.comp_tesla_kwh;
+    document.getElementById('set-tesla-abo').value = settings.comp_tesla_abo_jahr;
+    document.getElementById('set-tanke-kwh').value = settings.comp_tanke_kwh;
+    document.getElementById('set-tanke-min').value = settings.comp_tanke_zeit_min;
+    document.getElementById('set-tanke-abo').value = settings.comp_tanke_zeit_abo_monat;
     m.classList.add('show');
   }
 }
@@ -890,6 +901,11 @@ function saveSettings() {
   settings.defaultEnergy = parseFloat(document.getElementById('set-energy').value) || 0.12;
   settings.gebrauchsabgabe = parseFloat(document.getElementById('set-gab').value) || 7;
   settings.ust = parseFloat(document.getElementById('set-ust').value) || 20;
+  settings.comp_tesla_kwh = parseFloat(document.getElementById('set-tesla-kwh').value) || 0.48;
+  settings.comp_tesla_abo_jahr = parseFloat(document.getElementById('set-tesla-abo').value) || 99;
+  settings.comp_tanke_kwh = parseFloat(document.getElementById('set-tanke-kwh').value) || 0.39;
+  settings.comp_tanke_zeit_min = parseFloat(document.getElementById('set-tanke-min').value) || 0.069;
+  settings.comp_tanke_zeit_abo_monat = parseFloat(document.getElementById('set-tanke-abo').value) || 4.90;
   applyTheme();
   persist();
   toggleSettings();
@@ -905,6 +921,124 @@ function showToast(msg) {
   t.textContent = msg;
   t.classList.add('show');
   setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// =====================================================================
+// SAVINGS COMPARISON
+// =====================================================================
+function renderSavings() {
+  const area = document.getElementById('savings-area');
+  if (!area) return;
+
+  if (charges.length === 0) {
+    area.innerHTML = '<div class="empty-state" style="padding:16px;">Noch keine Ladevorgänge erfasst.</div>';
+    return;
+  }
+
+  const now = new Date();
+  let filtered = charges;
+  if (currentPeriod === 'month') {
+    const m = now.getMonth(), y = now.getFullYear();
+    filtered = charges.filter(c => { const d=new Date(c.date); return d.getMonth()===m && d.getFullYear()===y; });
+  } else if (currentPeriod === 'year') {
+    const y = now.getFullYear();
+    filtered = charges.filter(c => new Date(c.date).getFullYear()===y);
+  }
+
+  if (filtered.length === 0) {
+    area.innerHTML = '<div style="color:var(--text-muted);font-size:14px;padding:8px 0;">Keine Daten im gewählten Zeitraum.</div>';
+    return;
+  }
+
+  const totalKwh = filtered.reduce((s, c) => s + c.kwh, 0);
+  const totalCost = filtered.reduce((s, c) => s + c.total, 0);
+
+  function parseDauerMinutes(dauer) {
+    if (!dauer) return null;
+    const parts = dauer.split(':').map(Number);
+    if (parts.length === 3) return parts[0] * 60 + parts[1] + parts[2] / 60;
+    if (parts.length === 2) return parts[0] * 60 + parts[1];
+    return null;
+  }
+
+  const totalMinutes = filtered.reduce((s, c) => s + (parseDauerMinutes(c.dauer) || 0), 0);
+  const hasZeit = totalMinutes > 0;
+
+  const s = settings;
+  const costTesla = totalKwh * s.comp_tesla_kwh;
+  const costTankeKwh = totalKwh * s.comp_tanke_kwh;
+  const costTankeZeit = hasZeit ? totalMinutes * s.comp_tanke_zeit_min : null;
+
+  const savingTesla = costTesla - totalCost;
+  const savingTankeKwh = costTankeKwh - totalCost;
+  const savingTankeZeit = costTankeZeit !== null ? costTankeZeit - totalCost : null;
+
+  let aboTesla, aboTankeZeit;
+  if (currentPeriod === 'month') {
+    aboTesla = s.comp_tesla_abo_jahr / 12;
+    aboTankeZeit = s.comp_tanke_zeit_abo_monat;
+  } else if (currentPeriod === 'year') {
+    aboTesla = s.comp_tesla_abo_jahr;
+    aboTankeZeit = s.comp_tanke_zeit_abo_monat * 12;
+  } else {
+    const dates = filtered.map(c => new Date(c.date));
+    const minDate = new Date(Math.min(...dates));
+    const maxDate = new Date(Math.max(...dates));
+    const months = Math.max(1, (maxDate - minDate) / (1000 * 60 * 60 * 24 * 30.5));
+    aboTesla = (s.comp_tesla_abo_jahr / 12) * months;
+    aboTankeZeit = s.comp_tanke_zeit_abo_monat * months;
+  }
+
+  function savingCard(label, icon, altCost, saving, aboCost, aboLabel) {
+    const positive = saving > 0;
+    const color = positive ? 'var(--green)' : '#ef4444';
+    const arrow = positive ? '↓' : '↑';
+    const periodLabel = currentPeriod === 'month' ? 'Monat' : currentPeriod === 'year' ? 'Jahr' : 'Zeitraum';
+    return `
+      <div class="savings-card">
+        <div class="sc-header">
+          <span class="sc-icon">${icon}</span>
+          <span class="sc-label">${label}</span>
+        </div>
+        <div class="sc-row">
+          <span class="sc-key">Kosten dort</span>
+          <span class="sc-val">${fmt(altCost)} €</span>
+        </div>
+        <div class="sc-row">
+          <span class="sc-key">Kosten Wallbox</span>
+          <span class="sc-val">${fmt(totalCost)} €</span>
+        </div>
+        <div class="sc-divider"></div>
+        <div class="sc-row sc-saving" style="color:${color}">
+          <span>${positive ? '✓ Du sparst' : '✗ Du zahlst mehr'}</span>
+          <span>${arrow} ${fmt(Math.abs(saving))} €</span>
+        </div>
+        ${aboCost !== undefined ? `
+        <div class="sc-abo">
+          <span class="sc-abo-label">+ Abo (${aboLabel || periodLabel})</span>
+          <span class="sc-abo-val">${fmt(aboCost)} €</span>
+        </div>
+        <div class="sc-abo sc-abo-total" style="color:${(saving - aboCost) > 0 ? 'var(--green)' : '#ef4444'}">
+          <span>Netto-Ersparnis inkl. Abo</span>
+          <span>${(saving - aboCost) > 0 ? '↓' : '↑'} ${fmt(Math.abs(saving - aboCost))} €</span>
+        </div>` : ''}
+      </div>
+    `;
+  }
+
+  let html = `<div class="savings-grid">`;
+  html += savingCard('Tesla Supercharger', '⚡', costTesla, savingTesla, aboTesla);
+  html += savingCard('Tanke Wien kWh', '🔵', costTankeKwh, savingTankeKwh);
+  if (hasZeit && costTankeZeit !== null) {
+    html += savingCard('Tanke Wien Zeit', '🕐', costTankeZeit, savingTankeZeit, aboTankeZeit);
+  } else {
+    html += `<div class="savings-card sc-disabled">
+      <div class="sc-header"><span class="sc-icon">🕐</span><span class="sc-label">Tanke Wien Zeit</span></div>
+      <div style="font-size:13px;color:var(--text-muted);padding:8px 0;">Ladezeit nicht verfügbar<br>(go-e CSV mit "Dauer gesamt" importieren)</div>
+    </div>`;
+  }
+  html += `</div>`;
+  area.innerHTML = html;
 }
 
 // =====================================================================
