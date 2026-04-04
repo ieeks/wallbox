@@ -28,9 +28,9 @@ function isSnap(date, time) {
   return minutes >= 10 * 60 && minutes < 16 * 60;
 }
 
-function calcTotal(kwh, energyPrice, snap = false) {
-  const gab = WIEN_TARIFFS.gebrauchsabgabe_pct / 100;
-  const ust = WIEN_TARIFFS.ust_pct / 100;
+function calcTotal(kwh, energyPrice, snap = false, gab_pct = WIEN_TARIFFS.gebrauchsabgabe_pct, ust_pct = WIEN_TARIFFS.ust_pct) {
+  const gab = gab_pct / 100;
+  const ust = ust_pct / 100;
   const netznutzung = WIEN_TARIFFS.netznutzung_arbeit * (snap ? (1 - WIEN_TARIFFS.snap_rabatt) : 1);
   const netz = netznutzung + WIEN_TARIFFS.netzverlust;
   const foerder = WIEN_TARIFFS.foerderbeitrag_arbeit + WIEN_TARIFFS.foerderbeitrag_nvl;
@@ -110,10 +110,15 @@ async function run() {
   // kWh auf 3 Dezimalstellen runden
   const kwh = Math.round((wh / 1000) * 1000) / 1000;
 
-  // 4. Firestore: bestehende Daten lesen
+  // 4. Firestore: bestehende Daten + Settings lesen
   const docSnap = await docRef.get();
   const data = docSnap.exists ? docSnap.data() : {};
   const existing = data.charges || [];
+  const fsSettings = data.settings || {};
+  const energyPrice  = fsSettings.defaultEnergy     || DEFAULT_ENERGY_PRICE;
+  const gab_pct      = fsSettings.gebrauchsabgabe   || WIEN_TARIFFS.gebrauchsabgabe_pct;
+  const ust_pct      = fsSettings.ust               || WIEN_TARIFFS.ust_pct;
+  console.log(`settings: energyPrice=${energyPrice} | gab=${gab_pct}% | ust=${ust_pct}%`);
 
   // Duplikat-Check: lch identisch mit letzter gespeicherter Session
   const last = data.lastProcessedSession;
@@ -132,9 +137,9 @@ async function run() {
   const [date, time] = viennaFormatter.format(now).split(' ');
   // date = YYYY-MM-DD, time = HH:MM
 
-  // 5. Kosten berechnen (identisch mit calcTotal() in script.js; snap=false da Uhrzeit nicht zuverlässig)
+  // 5. Kosten berechnen mit Settings aus Firestore (snap=false da Uhrzeit nicht zuverlässig)
   const snap = false;
-  const r = calcTotal(kwh, DEFAULT_ENERGY_PRICE, false);
+  const r = calcTotal(kwh, energyPrice, false, gab_pct, ust_pct);
   const { total, bruttoPerKwh } = r;
 
   const cdi = status.cdi ?? 0;
@@ -147,7 +152,7 @@ async function run() {
     time,
     snap,
     kwh,
-    energyPrice:  DEFAULT_ENERGY_PRICE,
+    energyPrice,
     total,
     bruttoPerKwh,
     source:       'go-e-auto',
