@@ -108,12 +108,20 @@ async function run() {
   const date = startTime.toISOString().slice(0, 10); // YYYY-MM-DD
   const time = startTime.toTimeString().slice(0, 5);  // HH:MM
 
-  // 3. Firestore: bestehende Charges lesen
+  // 3. Firestore: bestehende Daten lesen
   const snap = isSnap(date, time);
   const docSnap = await docRef.get();
-  const existing = docSnap.exists ? (docSnap.data().charges || []) : [];
+  const data = docSnap.exists ? docSnap.data() : {};
+  const existing = data.charges || [];
 
-  // Duplikat-Check: selbes Datum + ähnliche kWh (±0.05)
+  // Duplikat-Check 1: lastProcessedSession verhindert Re-Import nach Löschung
+  const last = data.lastProcessedSession;
+  if (last && last.date === date && Math.abs(last.kwh - kwh) < 0.05) {
+    console.log(`Session bereits verarbeitet: ${date} ${kwh} kWh – übersprungen.`);
+    return;
+  }
+
+  // Duplikat-Check 2: Eintrag noch vorhanden in charges
   const duplicate = existing.some(c => c.date === date && Math.abs(c.kwh - kwh) < 0.05);
   if (duplicate) {
     console.log(`Duplikat erkannt: ${date} ${kwh} kWh – bereits gespeichert.`);
@@ -123,8 +131,8 @@ async function run() {
   // 4. Kosten berechnen
   const r = calcTotal(kwh, DEFAULT_ENERGY_PRICE, snap);
 
-  const dauer      = msToHMS(cdi);          // aktiver Stromfluss (cdi)
-  const maxKw      = typeof status.nrg?.[11] === 'number' ? status.nrg[11] / 1000 : null;
+  const dauer  = msToHMS(cdi);
+  const maxKw  = typeof status.nrg?.[11] === 'number' ? status.nrg[11] / 1000 : null;
 
   const entry = {
     id:           Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
@@ -137,14 +145,17 @@ async function run() {
     bruttoPerKwh: r.bruttoPerKwh,
     source:       'go-e-auto',
     maxKw,
-    dauer,          // aktive Ladezeit
-    dauerGesamt:  null, // nicht aus API verfügbar
+    dauer,
+    dauerGesamt:  null,
     created:      new Date().toISOString(),
   };
 
-  // 5. In Firestore speichern (ans Array anhängen, nach Datum sortieren)
+  // 5. In Firestore speichern + lastProcessedSession setzen
   const updated = [entry, ...existing].sort((a, b) => b.date.localeCompare(a.date));
-  await docRef.set({ charges: updated }, { merge: true });
+  await docRef.set({
+    charges: updated,
+    lastProcessedSession: { date, kwh },
+  }, { merge: true });
 
   console.log(`✅ Gespeichert: ${date} ${kwh} kWh → ${r.total} € (SNAP: ${snap})`);
 }
