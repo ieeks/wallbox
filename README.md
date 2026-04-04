@@ -12,7 +12,8 @@ Berechnet die echten Kosten jeder Ladung inkl. aller Wiener Netzentgelte, Abgabe
 
 - **Exakte Kostenberechnung** – Netznutzung, Netzverlust, Förderbeitrag, Elektrizitätsabgabe, Gebrauchsabgabe (7%), USt (20%)
 - **Sommer-Nieder-Arbeitspreis (SNAP)** – automatische Erkennung: Apr–Sep, 10–16 Uhr → –20% auf Netznutzungsentgelt
-- **Ersparnis-Vergleich** – Dashboard zeigt Ersparnis vs. Tesla Supercharger und Tanke Wien (kWh- und Zeittarif)
+- **Ersparnis-Vergleich** – Dashboard zeigt Ersparnis vs. Tesla Supercharger, Tanke Wien (kWh/Zeit) und Benziner (Tiguan)
+- **Benzinpreis live** – E-Control API liefert aktuellen Median-Benzinpreis Wien beim App-Start
 - **Ersparnis-Chip** – jede Ladung in der History zeigt die Ersparnis gegenüber der günstigsten Alternative
 - **go-e Auto-Import** – GitHub Action pollt alle 15 min die go-e Cloud API und speichert abgeschlossene Ladungen automatisch in Firestore
 - **CSV Import** – manueller Bulk-Import aus go-e Wallbox Export (inkl. Ladezeit für Zeittarif-Vergleich)
@@ -57,9 +58,10 @@ Die GitHub Action `.github/workflows/goe-import.yml` läuft alle 15 Minuten und 
 | `FIREBASE_SERVICE_ACCOUNT` | Service Account JSON (Firebase Console → Projekteinstellungen → Dienstkonten) |
 
 **Funktionsweise:**
-- `car === 4` + `wh > 10` → abgeschlossene Ladung erkannt
-- Duplikat-Schutz via `lastProcessedSession` in Firestore (verhindert Re-Import nach Löschung)
-- Kosten werden mit denselben Wiener Tarifen berechnet wie die App
+- `car === 1` (idle) + `wh > 10` + neuer `lch`-Wert → abgeschlossene Ladung erkannt
+- Exakter Session-Zeitpunkt via `rbt` + `lccfc` (ms seit Boot) → SNAP-Erkennung zuverlässig
+- Duplikat-Schutz: `lch` wird im Charge-Eintrag gespeichert; gelöschte Einträge können neu importiert werden
+- Kosten aus Firestore-Settings (`defaultEnergy`, `gebrauchsabgabe`, `ust`) – übernimmt App-Einstellungen automatisch
 - `source: 'go-e-auto'` zur Unterscheidung von manuellen Einträgen
 
 ## Setup
@@ -75,6 +77,7 @@ Keine Build-Schritte, kein Framework – reines HTML/CSS/JS.
 - Vanilla HTML/CSS/JS
 - Firebase Firestore (Cloud Sync)
 - GitHub Actions (go-e Auto-Import)
+- E-Control API (Live-Benzinpreise Wien)
 - Fonts: Manrope + Inter
 
 ## Lizenz
