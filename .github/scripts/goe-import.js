@@ -107,6 +107,7 @@ async function run() {
     return;
   }
 
+  // kWh auf 3 Dezimalstellen runden
   const kwh = Math.round((wh / 1000) * 1000) / 1000;
 
   // 4. Firestore: bestehende Daten lesen
@@ -121,14 +122,20 @@ async function run() {
     return;
   }
 
-  // Datum/Uhrzeit: Erkennungszeitpunkt (lch ist kein Unix-Epoch, sondern Uptime)
-  const now  = new Date();
-  const date = now.toISOString().slice(0, 10); // YYYY-MM-DD
-  const time = now.toTimeString().slice(0, 5);  // HH:MM
+  // Datum/Uhrzeit: Erkennungszeitpunkt in Vienna-Zeitzone
+  const now = new Date();
+  const viennaFormatter = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Europe/Vienna',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit',
+  });
+  const [date, time] = viennaFormatter.format(now).split(' ');
+  // date = YYYY-MM-DD, time = HH:MM
 
   // 5. Kosten berechnen
   const snap = isSnap(date, time);
-  const r = calcTotal(kwh, DEFAULT_ENERGY_PRICE, snap);
+  const bruttoPerKwh = parseFloat(process.env.GOE_BRUTTO_KWH) || 0.287;
+  const total = Math.round(kwh * bruttoPerKwh * 100) / 100;
 
   const cdi = status.cdi ?? 0;
   const dauer  = cdi > 0 ? msToHMS(cdi) : null;
@@ -141,8 +148,8 @@ async function run() {
     snap,
     kwh,
     energyPrice:  DEFAULT_ENERGY_PRICE,
-    total:        r.total,
-    bruttoPerKwh: r.bruttoPerKwh,
+    total,
+    bruttoPerKwh,
     source:       'go-e-auto',
     maxKw,
     dauer,
@@ -157,7 +164,7 @@ async function run() {
     lastProcessedSession: { date, kwh, lch },
   }, { merge: true });
 
-  console.log(`✅ Gespeichert: ${date} ${kwh} kWh → ${r.total} € (SNAP: ${snap})`);
+  console.log(`✅ Gespeichert: ${date} ${time} | ${kwh} kWh | ${total} € | bruttoPerKwh=${bruttoPerKwh} | SNAP=${snap}`);
 }
 
 run().catch(err => {
