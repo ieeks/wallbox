@@ -84,6 +84,7 @@ async function run() {
   }
 
   const status = await res.json();
+  console.log('Full API response:', JSON.stringify(status, null, 2));
 
   // 2. lcs (last charging session) auslesen – persistiert auch nach Abstecken
   const lcs = status.lcs;
