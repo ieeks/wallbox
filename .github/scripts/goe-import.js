@@ -84,57 +84,71 @@ async function run() {
   }
 
   const status = await res.json();
-  console.log('Full API response:', JSON.stringify(status, null, 2));
 
-  // 2. lcs (last charging session) auslesen – persistiert auch nach Abstecken
-  const lcs = status.lcs;
-  if (!lcs || typeof lcs !== 'object') {
-    console.log('Kein lcs vorhanden – noch keine abgeschlossene Ladung.');
+  // 2. Relevante Felder loggen
+  const car = status.car;
+  const wh  = status.wh  ?? 0;
+  const lch = status.lch ?? null; // last charge timestamp
+  const lcs = status.lcs ?? null; // seconds since reboot (kein Session-Objekt)
+  const dll = status.dll ?? null; // download URL (CSV history?)
+  console.log(`car=${car} | wh=${wh} | lch=${lch} | lcs=${lcs} | dll=${dll}`);
+
+  // dll-URL untersuchen: abrufen und ersten Teil loggen
+  if (dll) {
+    try {
+      const dllRes = await fetch(dll, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const contentType = dllRes.headers.get('content-type') || '';
+      const preview = (await dllRes.text()).slice(0, 500);
+      console.log(`dll content-type: ${contentType}`);
+      console.log(`dll preview:\n${preview}`);
+    } catch (e) {
+      console.log(`dll fetch error: ${e.message}`);
+    }
+  }
+
+  // 3. Neue Session erkennen: car==1 (idle/abgesteckt) + wh > 0 + lch neu
+  if (car !== 1) {
+    console.log(`car=${car} – Auto lädt noch oder nicht verbunden, nichts zu tun.`);
     return;
   }
 
-  const wh  = lcs.wh  ?? 0;
-  const cdi = lcs.cdi ?? 0; // aktive Ladedauer in ms
-
   if (wh < 10) {
-    console.log(`lcs.wh=${wh} zu gering – ignoriert.`);
+    console.log(`wh=${wh} zu gering – ignoriert.`);
+    return;
+  }
+
+  if (!lch) {
+    console.log('Kein lch-Timestamp vorhanden – ignoriert.');
     return;
   }
 
   const kwh = Math.round((wh / 1000) * 1000) / 1000;
 
-  // Datum/Uhrzeit: Erkennungszeitpunkt minus aktive Ladedauer
-  const endTime   = new Date();
-  const startTime = new Date(endTime.getTime() - cdi);
-
-  const date = startTime.toISOString().slice(0, 10); // YYYY-MM-DD
-  const time = startTime.toTimeString().slice(0, 5);  // HH:MM
-
-  // 3. Firestore: bestehende Daten lesen
-  const snap = isSnap(date, time);
+  // 4. Firestore: bestehende Daten lesen
   const docSnap = await docRef.get();
   const data = docSnap.exists ? docSnap.data() : {};
   const existing = data.charges || [];
 
-  // Duplikat-Check 1: lastProcessedSession via exaktem lcs.wh-Wert
-  // Verhindert Re-Import nach Löschung und während Auto noch angeschlossen bleibt
+  // Duplikat-Check: lch-Timestamp identisch mit letzter gespeicherter Session
   const last = data.lastProcessedSession;
-  if (last && last.lcsWh === wh) {
-    console.log(`Session bereits verarbeitet: lcs.wh=${wh} – übersprungen.`);
+  if (last && last.lch === lch) {
+    console.log(`Session bereits verarbeitet: lch=${lch} – übersprungen.`);
     return;
   }
 
-  // Duplikat-Check 2: Eintrag noch vorhanden in charges
-  const duplicate = existing.some(c => c.date === date && Math.abs(c.kwh - kwh) < 0.05);
-  if (duplicate) {
-    console.log(`Duplikat erkannt: ${date} ${kwh} kWh – bereits gespeichert.`);
-    return;
-  }
+  // Datum/Uhrzeit aus lch (Unix-Timestamp in Sekunden)
+  const sessionTime = new Date(lch * 1000);
+  const date = sessionTime.toISOString().slice(0, 10); // YYYY-MM-DD
+  const time = sessionTime.toTimeString().slice(0, 5);  // HH:MM
 
-  // 4. Kosten berechnen
+  // 5. Kosten berechnen
+  const snap = isSnap(date, time);
   const r = calcTotal(kwh, DEFAULT_ENERGY_PRICE, snap);
 
-  const dauer  = msToHMS(cdi);
+  const cdi = status.cdi ?? 0;
+  const dauer  = cdi > 0 ? msToHMS(cdi) : null;
   const maxKw  = typeof status.nrg?.[11] === 'number' ? status.nrg[11] / 1000 : null;
 
   const entry = {
@@ -153,11 +167,11 @@ async function run() {
     created:      new Date().toISOString(),
   };
 
-  // 5. In Firestore speichern + lastProcessedSession setzen
+  // 6. In Firestore speichern + lastProcessedSession setzen
   const updated = [entry, ...existing].sort((a, b) => b.date.localeCompare(a.date));
   await docRef.set({
     charges: updated,
-    lastProcessedSession: { date, kwh, lcsWh: wh },
+    lastProcessedSession: { date, kwh, lch },
   }, { merge: true });
 
   console.log(`✅ Gespeichert: ${date} ${kwh} kWh → ${r.total} € (SNAP: ${snap})`);
