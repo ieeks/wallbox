@@ -324,7 +324,7 @@ function showPage(name, btn) {
   document.getElementById('page-'+name).classList.add('active');
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   if(btn) btn.classList.add('active');
-  else document.querySelector(`.nav-item[data-page="${name}"]`)?.classList.add('active');
+  else if(name !== 'detail') document.querySelector(`.nav-item[data-page="${name}"]`)?.classList.add('active');
 
   if(name === 'dashboard') refreshDashboard();
 }
@@ -510,7 +510,7 @@ function refreshDashboard() {
           <span class="material-symbols-outlined" style="font-size:20px;">delete</span>
           Löschen
         </div>
-        <div class="history-item" id="hi-${c.id}">
+        <div class="history-item" id="hi-${c.id}" onclick="showDetail('${c.id}')">
           <div class="hi-left">
             <div class="hi-dot"></div>
             <div>
@@ -525,7 +525,7 @@ function refreshDashboard() {
               <div class="hi-saving">${(() => { const b = calcSavingChip(c.kwh); return b.saving > 0 ? `${b.label}: +${fmt(b.saving)} €` : ''; })()}</div>
             </div>
             <div class="hi-actions">
-              <button class="hi-del" onclick="askDelete('${c.id}', ${c.kwh}, '${c.date}')" title="Löschen" aria-label="Ladevorgang löschen">
+              <button class="hi-del" onclick="event.stopPropagation(); askDelete('${c.id}', ${c.kwh}, '${c.date}')" title="Löschen" aria-label="Ladevorgang löschen">
                 <span class="material-symbols-outlined" style="font-size:18px;">delete</span>
               </button>
             </div>
@@ -1152,6 +1152,142 @@ function renderSavings() {
 
   html += `</div>`;
   area.innerHTML = html;
+}
+
+// =====================================================================
+// DETAIL PAGE
+// =====================================================================
+function showDetail(id) {
+  const c = charges.find(ch => ch.id === id);
+  if (!c) return;
+
+  function fmtDauer(dauer) {
+    if (!dauer) return null;
+    const parts = dauer.split(':').map(Number);
+    if (parts.length !== 3) return dauer;
+    const h = parts[0], m = parts[1];
+    if (h > 0 && m > 0) return `${h}h ${String(m).padStart(2, '0')}min`;
+    if (h > 0) return `${h}h`;
+    return `${m}min`;
+  }
+
+  function parseDauerMinutes(dauer) {
+    if (!dauer) return null;
+    const parts = dauer.split(':').map(Number);
+    if (parts.length === 3) return parts[0] * 60 + parts[1] + parts[2] / 60;
+    if (parts.length === 2) return parts[0] * 60 + parts[1];
+    return null;
+  }
+
+  const ep = c.energyPrice || settings.defaultEnergy;
+  const snap = c.snap || false;
+  const r = calcTotal(c.kwh, ep, snap);
+  const bd = r.breakdown;
+
+  const minutes = parseDauerMinutes(c.dauer);
+  const hasZeit = minutes !== null && minutes > 0;
+  const dauerFormatted = fmtDauer(c.dauer);
+
+  const s = settings;
+  const myCost = c.total;
+  const costTesla = c.kwh * s.comp_tesla_kwh;
+  const costTankeKwh = c.kwh * s.comp_tanke_kwh;
+  const costTankeZeit = hasZeit ? minutes * s.comp_tanke_zeit_min : null;
+  const kmEV = c.kwh / (s.comp_ev_verbrauch_kwh / 100);
+  const costBenzin = kmEV * (s.comp_benzin_verbrauch_l / 100) * s.comp_benzin_preis;
+
+  function scCard(label, icon, altCost, saving) {
+    const positive = saving > 0;
+    const color = positive ? 'var(--green)' : '#ef4444';
+    const arrow = positive ? '↓' : '↑';
+    return `
+      <div class="savings-card">
+        <div class="sc-header"><span class="sc-icon">${icon}</span><span class="sc-label">${label}</span></div>
+        <div class="sc-row"><span class="sc-key">Kosten dort</span><span class="sc-val">${fmt(altCost)} €</span></div>
+        <div class="sc-row"><span class="sc-key">Kosten Wallbox</span><span class="sc-val">${fmt(myCost)} €</span></div>
+        <div class="sc-divider"></div>
+        <div class="sc-row sc-saving" style="color:${color}">
+          <span>${positive ? '✓ Du sparst' : '✗ Du zahlst mehr'}</span>
+          <span>${arrow} ${fmt(Math.abs(saving))} €</span>
+        </div>
+      </div>`;
+  }
+
+  const savingBenzin = costBenzin - myCost;
+  let savingsHtml = `<div class="savings-grid">`;
+  savingsHtml += scCard('Tesla Supercharger', '⚡', costTesla, costTesla - myCost);
+  savingsHtml += scCard('Tanke Wien kWh', '🔵', costTankeKwh, costTankeKwh - myCost);
+  if (hasZeit) {
+    savingsHtml += scCard('Tanke Wien Zeit', '🕐', costTankeZeit, costTankeZeit - myCost);
+  } else {
+    savingsHtml += `<div class="savings-card sc-disabled">
+      <div class="sc-header"><span class="sc-icon">🕐</span><span class="sc-label">Tanke Wien Zeit</span></div>
+      <div style="font-size:13px;color:var(--text-muted);padding:8px 0;">Ladezeit nicht verfügbar</div>
+    </div>`;
+  }
+  savingsHtml += `
+    <div class="savings-card">
+      <div class="sc-header"><span class="sc-icon">⛽</span><span class="sc-label">Tiguan (Benzin)</span></div>
+      <div class="sc-row"><span class="sc-key">Gefahrene km (geschätzt)</span><span class="sc-val">${fmt(kmEV, 0)} km</span></div>
+      <div class="sc-row"><span class="sc-key">Benzinkosten (${fmt(s.comp_benzin_verbrauch_l, 1)}L/100km)</span><span class="sc-val">${fmt(costBenzin)} €</span></div>
+      <div class="sc-row"><span class="sc-key">Kosten Wallbox</span><span class="sc-val">${fmt(myCost)} €</span></div>
+      <div class="sc-divider"></div>
+      <div class="sc-row sc-saving" style="color:${savingBenzin > 0 ? 'var(--green)' : '#ef4444'}">
+        <span>${savingBenzin > 0 ? '✓ Du sparst' : '✗ Du zahlst mehr'}</span>
+        <span>${savingBenzin > 0 ? '↓' : '↑'} ${fmt(Math.abs(savingBenzin))} €</span>
+      </div>
+      <div class="sc-abo">ℹ️ Benzinpreis: ${fmt(s.comp_benzin_preis, 3)} €/L (E-Control Wien)</div>
+    </div>`;
+  savingsHtml += `</div>`;
+
+  const snapBadge = snap
+    ? `<span class="detail-snap-badge">☀️ SNAP –20%</span>`
+    : `<div class="rc-dot"></div>`;
+
+  document.getElementById('page-detail').innerHTML = `
+    <div class="detail-header">
+      <button class="detail-back" onclick="showPage('dashboard')" aria-label="Zurück">
+        <span class="material-symbols-outlined">arrow_back</span>
+      </button>
+      <div class="detail-title">Ladevorgang</div>
+    </div>
+
+    <div class="section-title" style="margin-top:8px;">Übersicht</div>
+    <div class="result-card" style="margin-top:0;">
+      <div class="rc-header">
+        <span class="rc-label">Gesamtkosten</span>
+        ${snapBadge}
+      </div>
+      <div class="rc-amount"><span>${fmt(c.total)}</span><span class="curr"> €</span></div>
+      <div class="rc-breakdown">
+        <div class="rb-row"><span>Datum &amp; Uhrzeit</span><span class="rb-val">${fmtDate(c.date)}${c.time ? ', ' + c.time + ' Uhr' : ''}</span></div>
+        <div class="rb-row"><span>Energie geladen</span><span class="rb-val">${fmt(c.kwh, 3)} kWh</span></div>
+        ${dauerFormatted ? `<div class="rb-row"><span>Aktive Ladezeit</span><span class="rb-val">${dauerFormatted}</span></div>` : ''}
+        ${c.maxKw ? `<div class="rb-row"><span>Max. Leistung</span><span class="rb-val">${fmt(c.maxKw, 2)} kW</span></div>` : ''}
+        <div class="rb-row"><span>Quelle</span><span class="rb-val" style="color:var(--text-muted);font-size:11px;">${c.source || 'manuell'}</span></div>
+      </div>
+    </div>
+
+    <div class="section-title">Kostenaufschlüsselung</div>
+    <div class="result-card" style="margin-top:0;">
+      <div class="rc-breakdown">
+        <div class="rb-row"><span>Energie (${fmt(ep, 4)} €/kWh)</span><span class="rb-val">${fmt(bd.energy)} €</span></div>
+        <div class="rb-row"><span>Netznutzung (${fmt(r.netznutzung * 100, 2)} ct${snap ? ' ☀️ –20%' : ''})</span><span class="rb-val">${fmt(bd.netznutzung)} €</span></div>
+        <div class="rb-row"><span>Netzverlust (0,70 ct)</span><span class="rb-val">${fmt(bd.netzverlust, 3)} €</span></div>
+        <div class="rb-row"><span>GAB ${settings.gebrauchsabgabe}% auf Energie+Netz</span><span class="rb-val">${fmt(bd.gabBetrag, 3)} €</span></div>
+        <div class="rb-row"><span>Förderbeitrag</span><span class="rb-val">${fmt(bd.foerderbeitrag, 3)} €</span></div>
+        <div class="rb-row"><span>Elektrizitätsabgabe</span><span class="rb-val">${fmt(bd.eAbgabe, 3)} €</span></div>
+        <div class="rb-row" style="font-weight:500;color:var(--text);"><span>Netto gesamt</span><span class="rb-val">${fmt(bd.nettoGesamt)} €</span></div>
+        <div class="rb-row"><span>USt (${settings.ust}%)</span><span class="rb-val">${fmt(bd.ust)} €</span></div>
+        <div class="rb-row rb-total"><span>Brutto gesamt</span><span class="rb-val">${fmt(bd.bruttoGesamt)} €</span></div>
+      </div>
+    </div>
+
+    <div class="section-title">Ersparnis vs. Alternativen</div>
+    ${savingsHtml}
+  `;
+
+  showPage('detail');
 }
 
 // =====================================================================
