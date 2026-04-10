@@ -43,15 +43,6 @@ function calcTotal(kwh, energyPrice, snap = false, gab_pct = WIEN_TARIFFS.gebrau
   return { total: Math.round(total * 100) / 100, bruttoPerKwh };
 }
 
-// Millisekunden → "H:MM:SS"
-function msToHMS(ms) {
-  const s = Math.round(ms / 1000);
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = s % 60;
-  return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
-}
-
 // =====================================================================
 // FIREBASE INIT
 // =====================================================================
@@ -149,8 +140,14 @@ async function run() {
   const r = calcTotal(kwh, energyPrice, false, gab_pct, ust_pct);
   const { total, bruttoPerKwh } = r;
 
-  const cdi = status.cdi ?? 0;
-  const dauer  = cdi > 0 ? msToHMS(cdi) : null;
+  const dauerMs = status.cdi?.value || 0;
+  const dauerSec = Math.floor(dauerMs / 1000);
+  const h = Math.floor(dauerSec / 3600);
+  const m = Math.floor((dauerSec % 3600) / 60);
+  const s = dauerSec % 60;
+  const dauer = dauerMs > 0
+    ? (h + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0'))
+    : null;
   const maxKw  = typeof status.nrg?.[11] === 'number' ? status.nrg[11] / 1000 : null;
 
   const entry = {
