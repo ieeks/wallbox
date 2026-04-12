@@ -794,3 +794,17 @@ nav {
   border-radius: 6px;
   padding: 3px 8px;
 }
+
+/* === AMORTISATION === */
+.amort-bar-wrap {
+  background: var(--border);
+  border-radius: 99px;
+  height: 8px;
+  margin: 10px 0;
+}
+.amort-bar-fill {
+  background: var(--green);
+  border-radius: 99px;
+  height: 8px;
+  transition: width 0.6s ease;
+}

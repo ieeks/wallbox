@@ -75,6 +75,7 @@ let settings = JSON.parse(localStorage.getItem('lf_settings') || 'null') || {
   comp_benzin_verbrauch_l: 8.2,
   comp_ev_verbrauch_kwh: 20.0,
   comp_benzin_preis: 1.80,
+  comp_wallbox_installation: 2685.40,
 };
 settings = {
   comp_tesla_kwh: 0.48,
@@ -85,6 +86,7 @@ settings = {
   comp_benzin_verbrauch_l: 8.2,
   comp_ev_verbrauch_kwh: 20.0,
   comp_benzin_preis: 1.80,
+  comp_wallbox_installation: 2685.40,
   ...settings,
 };
 let currentPeriod = 'month';
@@ -544,6 +546,7 @@ function refreshDashboard() {
   renderChart(filtered);
   renderInsights();
   renderSavings();
+  renderAmortisation();
 }
 
 let pendingDeleteId = null;
@@ -980,6 +983,7 @@ function toggleSettings() {
     document.getElementById('set-benzin-l').value = settings.comp_benzin_verbrauch_l;
     document.getElementById('set-ev-kwh').value = settings.comp_ev_verbrauch_kwh;
     document.getElementById('set-benzin-preis').value = settings.comp_benzin_preis;
+    document.getElementById('set-wallbox-installation').value = settings.comp_wallbox_installation;
     m.classList.add('show');
   }
 }
@@ -996,6 +1000,7 @@ function saveSettings() {
   settings.comp_benzin_verbrauch_l = parseFloat(document.getElementById('set-benzin-l').value) || 8.2;
   settings.comp_ev_verbrauch_kwh = parseFloat(document.getElementById('set-ev-kwh').value) || 20.0;
   settings.comp_benzin_preis = parseFloat(document.getElementById('set-benzin-preis').value) || 1.80;
+  settings.comp_wallbox_installation = parseFloat(document.getElementById('set-wallbox-installation').value) || 2685.40;
   applyTheme();
   persist();
   toggleSettings();
@@ -1152,6 +1157,72 @@ function renderSavings() {
 
   html += `</div>`;
   area.innerHTML = html;
+}
+
+// =====================================================================
+// AMORTISATION
+// =====================================================================
+function renderAmortisation() {
+  const area = document.getElementById('amortisation-area');
+  if (!area) return;
+
+  if (currentPeriod !== 'all' || charges.length === 0) {
+    area.innerHTML = '';
+    return;
+  }
+
+  const installation = settings.comp_wallbox_installation;
+  const s = settings;
+
+  const totalCostAll = charges.reduce((s, c) => s + c.total, 0);
+
+  const savingTeslaAll = charges.reduce((sum, c) => sum + (c.kwh * s.comp_tesla_kwh) - c.total, 0);
+  const savingTankeAll = charges.reduce((sum, c) => sum + (c.kwh * s.comp_tanke_kwh) - c.total, 0);
+  const savingBenzinAll = charges.reduce((sum, c) => {
+    const km = c.kwh / (s.comp_ev_verbrauch_kwh / 100);
+    const benzinCost = km * (s.comp_benzin_verbrauch_l / 100) * s.comp_benzin_preis;
+    return sum + benzinCost - c.total;
+  }, 0);
+
+  const firstDate = new Date(charges[charges.length - 1].date);
+  const monthsElapsed = Math.max(1, (new Date() - firstDate) / (1000 * 60 * 60 * 24 * 30.5));
+
+  function amortCard(label, icon, saving) {
+    const pct = Math.min(100, (saving / installation) * 100);
+    const remaining = Math.max(0, installation - saving);
+    const monthlyAvg = saving / monthsElapsed;
+    const monthsLeft = monthlyAvg > 0 ? remaining / monthlyAvg : Infinity;
+    const breakEvenDate = new Date();
+    breakEvenDate.setMonth(breakEvenDate.getMonth() + Math.ceil(monthsLeft));
+    const breakEvenStr = isFinite(monthsLeft)
+      ? breakEvenDate.toLocaleDateString('de-AT', { month: 'long', year: 'numeric' })
+      : '–';
+
+    const footer = pct >= 100
+      ? `<div style="color:var(--green);font-weight:600;text-align:center;padding:4px 0;">✅ Amortisiert!</div>`
+      : `<div class="sc-row"><span>Break-even ca.</span><span style="font-weight:600;">${breakEvenStr}</span></div>`;
+
+    return `
+      <div class="savings-card">
+        <div class="sc-header"><span class="sc-icon">${icon}</span><span class="sc-label">${label}</span></div>
+        <div class="sc-row"><span class="sc-key">Installationskosten</span><span class="sc-val">${fmt(installation)} €</span></div>
+        <div class="sc-row"><span class="sc-key">Gespart bisher</span><span class="sc-val" style="color:var(--green)">${fmt(saving)} €</span></div>
+        <div class="sc-row"><span class="sc-key">Noch zu sparen</span><span class="sc-val">${fmt(remaining)} €</span></div>
+        <div class="amort-bar-wrap"><div class="amort-bar-fill" style="width:${pct}%"></div></div>
+        <div style="font-size:11px;color:var(--text-muted);text-align:right;">${fmt(pct, 1)}%</div>
+        <div class="sc-divider"></div>
+        ${footer}
+      </div>`;
+  }
+
+  area.innerHTML = `
+    <div class="section-title">🏠 Amortisation Wallbox</div>
+    <div class="savings-grid">
+      ${amortCard('Tesla Supercharger', '⚡', savingTeslaAll)}
+      ${amortCard('Tanke Wien kWh', '🔵', savingTankeAll)}
+      ${amortCard('Benzin (Tiguan)', '⛽', savingBenzinAll)}
+    </div>
+  `;
 }
 
 // =====================================================================
