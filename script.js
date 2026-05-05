@@ -598,28 +598,49 @@ function initSwipe(id) {
   const el = document.getElementById('hi-' + id);
   if(!el) return;
 
-  let startX = 0, currentX = 0, isDragging = false;
+  let startX = 0, startY = 0, currentX = 0;
+  let isDragging = false, directionLocked = false, isHorizontal = false;
+  const DIR_LOCK_PX = 10;  // px before direction is decided
+  const SNAP_PX = 100;     // px to snap into swiped state
 
   el.addEventListener('touchstart', e => {
     startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    currentX = startX;
     isDragging = true;
+    directionLocked = false;
+    isHorizontal = false;
     el.style.transition = 'none';
   }, {passive:true});
 
   el.addEventListener('touchmove', e => {
     if(!isDragging) return;
+    const dx = e.touches[0].clientX - startX;
+    const dy = e.touches[0].clientY - startY;
     currentX = e.touches[0].clientX;
+
+    if(!directionLocked) {
+      if(Math.abs(dx) < DIR_LOCK_PX && Math.abs(dy) < DIR_LOCK_PX) return;
+      directionLocked = true;
+      isHorizontal = Math.abs(dx) > Math.abs(dy) * 1.5;
+    }
+
+    if(!isHorizontal) return;
+
     const diff = startX - currentX;
     if(diff > 0) {
       el.style.transform = `translateX(${-Math.min(diff, 120)}px)`;
+    } else {
+      el.style.transform = 'translateX(0)';
     }
   }, {passive:true});
 
   el.addEventListener('touchend', () => {
     isDragging = false;
+    if(!isHorizontal) return;
     el.style.transition = 'transform 0.3s ease';
     const diff = startX - currentX;
-    if(diff > 80) {
+    if(diff > SNAP_PX) {
       el.classList.add('swiped');
       el.style.transform = '';
     } else {
