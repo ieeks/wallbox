@@ -551,6 +551,7 @@ function refreshDashboard() {
   renderInsights();
   renderSavings();
   renderAmortisation();
+  renderMonthStats();
 }
 
 let pendingDeleteId = null;
@@ -1389,6 +1390,56 @@ function showDetail(id) {
   `;
 
   showPage('detail');
+}
+
+// =====================================================================
+// MONTHLY STATS
+// =====================================================================
+function renderMonthStats() {
+  const area = document.getElementById('month-stats-area');
+  if (!area) return;
+
+  if (currentPeriod === 'month') { area.innerHTML = ''; return; }
+
+  const data = currentPeriod === 'all'
+    ? charges
+    : charges.filter(c => new Date(c.date).getFullYear() === new Date().getFullYear());
+
+  if (data.length === 0) { area.innerHTML = ''; return; }
+
+  const byMonth = {};
+  data.forEach(c => {
+    const key = c.date.slice(0, 7);
+    if (!byMonth[key]) byMonth[key] = { count: 0, kwh: 0, cost: 0, snapCount: 0 };
+    byMonth[key].count++;
+    byMonth[key].kwh += c.kwh;
+    byMonth[key].cost += c.total;
+    if (c.snap) byMonth[key].snapCount++;
+  });
+
+  const rows = Object.keys(byMonth).sort().reverse().map(key => {
+    const m = byMonth[key];
+    const avgCt = m.kwh > 0 ? (m.cost / m.kwh) * 100 : 0;
+    const [y, mo] = key.split('-');
+    const label = new Date(parseInt(y), parseInt(mo) - 1, 1)
+      .toLocaleDateString('de-AT', { month: 'long', year: 'numeric' });
+    return `
+      <div class="month-stat-row">
+        <div class="msr-left">
+          <div class="msr-month">${label}</div>
+          <div class="msr-meta">${m.count} Ladung${m.count !== 1 ? 'en' : ''}${m.snapCount > 0 ? ' · ☀️ ' + m.snapCount : ''}</div>
+        </div>
+        <div class="msr-mid">${fmt(m.kwh, 1)}<span class="msr-unit"> kWh</span></div>
+        <div class="msr-right">
+          <div class="msr-cost">${fmt(m.cost)} €</div>
+          <div class="msr-avg">${fmt(avgCt, 1)} ct/kWh</div>
+        </div>
+      </div>`;
+  }).join('');
+
+  area.innerHTML = `
+    <div class="section-title">📅 Monatsverlauf</div>
+    <div class="month-stats-card">${rows}</div>`;
 }
 
 // =====================================================================

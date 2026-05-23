@@ -38,7 +38,7 @@ Alle automatisch importierten SNAP-Sessions haben deshalb falsch berechnete (zu 
 
 ---
 
-## [ ] 4. Monats-Statistik Seite / Tabelle
+## [x] 4. Monats-Statistik Seite / Tabelle
 
 Übersichtstabelle pro Monat:
 
