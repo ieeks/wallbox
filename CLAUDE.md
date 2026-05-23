@@ -18,7 +18,7 @@ sehen Nutzer nach einem Deploy noch die alte Version.
 
 ---
 
-## Aktuelle Version: 1.6.1
+## Aktuelle Version: 1.6.2
 
 ---
 

@@ -21,7 +21,7 @@ Dashboard-Card die zeigt ob das Auto gerade lädt — direkt von der go-e API.
 
 ---
 
-## [ ] 3. SNAP-Bug im Auto-Import fixen
+## [x] 3. SNAP-Bug im Auto-Import fixen
 
 In `.github/scripts/goe-import.js` wird SNAP korrekt erkannt, aber **nicht übergeben**:
 
