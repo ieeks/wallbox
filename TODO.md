@@ -1,6 +1,6 @@
 # TODO
 
-## [ ] 1. Einträge bearbeiten (Edit)
+## [x] 1. Einträge bearbeiten (Edit)
 
 Aktuell können Einträge nur gelöscht werden. Ein Edit-Modus soll erlauben, kWh, Datum, Uhrzeit und Energiepreis nachträglich zu korrigieren.
 
@@ -38,7 +38,7 @@ Alle automatisch importierten SNAP-Sessions haben deshalb falsch berechnete (zu 
 
 ---
 
-## [ ] 4. Monats-Statistik Seite / Tabelle
+## [x] 4. Monats-Statistik Seite / Tabelle
 
 Übersichtstabelle pro Monat:
 

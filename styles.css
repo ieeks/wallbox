@@ -411,6 +411,13 @@ html[data-theme="dark"] .period-btn.active {
 .hi-rate { font-size:11px; color:var(--text-secondary); }
 
 .hi-actions { display:flex; gap:4px; margin-left:10px; flex-shrink:0; }
+.hi-edit {
+  background:var(--surface-high); border:none; color:var(--text-secondary); cursor:pointer;
+  width:36px; height:36px; border-radius:10px; display:flex; align-items:center; justify-content:center;
+  transition: all 0.2s;
+}
+.hi-edit:hover { background:var(--surface-highest); color:var(--text); }
+.hi-edit:active { transform:scale(0.9); }
 .hi-del {
   background:var(--primary-dim); border:none; color:var(--primary); cursor:pointer;
   width:36px; height:36px; border-radius:10px; display:flex; align-items:center; justify-content:center;
@@ -794,6 +801,35 @@ nav {
   border-radius: 6px;
   padding: 3px 8px;
 }
+
+/* === MONTHLY STATS === */
+.month-stats-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 16px;
+  box-shadow: var(--surface-shadow);
+}
+.month-stat-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.month-stat-row:last-child { border-bottom: none; }
+.msr-left { flex: 1; min-width: 0; }
+.msr-month { font-size: 14px; font-weight: 600; }
+.msr-meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.msr-mid {
+  font-size: 13px; font-weight: 500; color: var(--text-secondary);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.msr-unit { font-size: 11px; }
+.msr-right { text-align: right; flex-shrink: 0; }
+.msr-cost { font-family: 'Manrope'; font-weight: 700; font-size: 15px; font-variant-numeric: tabular-nums; }
+.msr-avg { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
 
 /* === GO-E LIVE STATUS === */
 .live-status-card {
