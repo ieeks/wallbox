@@ -225,6 +225,22 @@ function setSyncStatus(status) {
   else label.textContent = 'Lokal';
 }
 
+async function clearChargesOnly() {
+  charges = [];
+  localStorage.setItem('lf_charges', JSON.stringify([]));
+  if (firebaseReady) {
+    try {
+      await db.collection('haushalte').doc(HOUSEHOLD_DOC).set(
+        { charges: [], updatedAt: firebase.firestore.FieldValue.serverTimestamp() },
+        { merge: true }
+      );
+    } catch(e) { console.error(e); }
+  }
+  toggleSettings();
+  refreshDashboard();
+  showToast('Ladedaten gelöscht – Einstellungen beibehalten');
+}
+
 async function clearAllData() {
   if(firebaseReady) {
     try {
