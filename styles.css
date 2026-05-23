@@ -411,6 +411,13 @@ html[data-theme="dark"] .period-btn.active {
 .hi-rate { font-size:11px; color:var(--text-secondary); }
 
 .hi-actions { display:flex; gap:4px; margin-left:10px; flex-shrink:0; }
+.hi-edit {
+  background:var(--surface-high); border:none; color:var(--text-secondary); cursor:pointer;
+  width:36px; height:36px; border-radius:10px; display:flex; align-items:center; justify-content:center;
+  transition: all 0.2s;
+}
+.hi-edit:hover { background:var(--surface-highest); color:var(--text); }
+.hi-edit:active { transform:scale(0.9); }
 .hi-del {
   background:var(--primary-dim); border:none; color:var(--primary); cursor:pointer;
   width:36px; height:36px; border-radius:10px; display:flex; align-items:center; justify-content:center;

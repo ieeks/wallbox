@@ -531,6 +531,9 @@ function refreshDashboard() {
               <div class="hi-saving">${(() => { const b = calcSavingChip(c.kwh); return b.saving > 0 ? `${b.label}: +${fmt(b.saving)} €` : ''; })()}</div>
             </div>
             <div class="hi-actions">
+              <button class="hi-edit" onclick="event.stopPropagation(); openEdit('${c.id}')" title="Bearbeiten" aria-label="Ladevorgang bearbeiten">
+                <span class="material-symbols-outlined" style="font-size:18px;">edit</span>
+              </button>
               <button class="hi-del" onclick="event.stopPropagation(); askDelete('${c.id}', ${c.kwh}, '${c.date}')" title="Löschen" aria-label="Ladevorgang löschen">
                 <span class="material-symbols-outlined" style="font-size:18px;">delete</span>
               </button>
@@ -1352,6 +1355,9 @@ function showDetail(id) {
         <span class="material-symbols-outlined">arrow_back</span>
       </button>
       <div class="detail-title">Ladevorgang</div>
+      <button class="detail-back" onclick="openEdit('${c.id}')" aria-label="Bearbeiten" style="margin-left:auto;">
+        <span class="material-symbols-outlined">edit</span>
+      </button>
     </div>
 
     <div class="section-title" style="margin-top:8px;">Übersicht</div>
@@ -1390,6 +1396,57 @@ function showDetail(id) {
   `;
 
   showPage('detail');
+}
+
+// =====================================================================
+// EDIT CHARGE
+// =====================================================================
+let editingId = null;
+
+function openEdit(id) {
+  const c = charges.find(ch => ch.id === id);
+  if (!c) return;
+  editingId = id;
+  document.getElementById('edit-kwh').value = c.kwh;
+  document.getElementById('edit-energy').value = c.energyPrice || settings.defaultEnergy;
+  document.getElementById('edit-date').value = c.date;
+  document.getElementById('edit-time').value = c.time || '';
+  document.getElementById('edit-modal').classList.add('show');
+}
+
+function closeEdit() {
+  editingId = null;
+  document.getElementById('edit-modal').classList.remove('show');
+}
+
+function saveEdit() {
+  if (!editingId) return;
+  const kwh = parseFloat(document.getElementById('edit-kwh').value);
+  const energy = parseFloat(document.getElementById('edit-energy').value);
+  const date = document.getElementById('edit-date').value;
+  const time = document.getElementById('edit-time').value;
+  if (!kwh || kwh <= 0 || !date) return;
+
+  const snap = isSnap(date, time);
+  const r = calcTotal(kwh, energy, snap);
+
+  const idx = charges.findIndex(ch => ch.id === editingId);
+  if (idx === -1) return;
+  charges[idx] = {
+    ...charges[idx],
+    kwh,
+    energyPrice: energy,
+    date,
+    time: time || null,
+    snap,
+    total: Math.round(r.total * 100) / 100,
+    bruttoPerKwh: r.bruttoPerKwh,
+  };
+  charges.sort((a, b) => b.date.localeCompare(a.date));
+  persist();
+  closeEdit();
+  showToast('Ladevorgang aktualisiert');
+  refreshDashboard();
 }
 
 // =====================================================================
