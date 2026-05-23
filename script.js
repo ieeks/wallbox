@@ -184,17 +184,18 @@ async function loadFromCloud() {
         const cloudIds = new Set(data.charges.map(c => c.id));
         const localOnlyEntries = charges.filter(c => !cloudIds.has(c.id));
         const merged = [...data.charges, ...localOnlyEntries];
-        // De-Dup: gleiche ID oder gleicher Tag+kWh → nur erster Eintrag bleibt
-        const seen = new Set();
+        // De-Dup: lch (primär) oder Datum+kWh (Fallback) — ID ist immer eindeutig, taugt nicht als Inhaltspüfer
+        const seenContent = new Set();
         charges = merged.filter(c => {
-          const key = c.id || `${c.date}_${Math.round((c.kwh ?? 0) * 10)}`;
-          if (seen.has(key)) return false;
-          seen.add(key);
+          const key = c.lch ? `lch_${c.lch}` : `${c.date}_${Math.round((c.kwh ?? 0) * 10)}`;
+          if (seenContent.has(key)) return false;
+          seenContent.add(key);
           return true;
         });
         charges.sort((a,b) => b.date.localeCompare(a.date));
-        // Push merged data back if we had local-only entries
-        if(localOnlyEntries.length > 0) {
+        const hadDuplicates = charges.length < merged.length;
+        // Push back if local-only entries existed OR duplicates were removed
+        if(localOnlyEntries.length > 0 || hadDuplicates) {
           localStorage.setItem('lf_charges', JSON.stringify(charges));
           localStorage.setItem('lf_settings', JSON.stringify(settings));
           await syncToCloud();

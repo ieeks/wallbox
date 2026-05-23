@@ -18,7 +18,7 @@ sehen Nutzer nach einem Deploy noch die alte Version.
 
 ---
 
-## Aktuelle Version: 1.9.2
+## Aktuelle Version: 1.9.3
 
 ---
 
