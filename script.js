@@ -894,7 +894,8 @@ function processFile(file) {
       const isGoE = header.includes('energie [kwh]') || header.includes('session number');
 
       if(isGoE) {
-        const cols = lines[0].split(';').map(c => c.trim().toLowerCase());
+        const delim = lines[0].includes('\t') ? '\t' : ';';
+        const cols = lines[0].split(delim).map(c => c.trim().toLowerCase());
         const iStart = cols.findIndex(c => c === 'start');
         const iKwh = cols.findIndex(c => c.includes('energie'));
         const iMaxKw = cols.findIndex(c => c.includes('max. leistung'));
@@ -907,14 +908,16 @@ function processFile(file) {
         }
 
         for(let i = 1; i < lines.length; i++) {
-          const parts = lines[i].split(';');
+          const parts = lines[i].split(delim);
           if(parts.length < Math.max(iStart, iKwh) + 1) continue;
           const startRaw = parts[iStart].trim();
           if(!startRaw) continue;
           const startParts = startRaw.split(' ');
           const dateParts = startParts[0].split('.');
           if(dateParts.length !== 3) continue;
-          const date = `${dateParts[2]}-${dateParts[1].padStart(2,'0')}-${dateParts[0].padStart(2,'0')}`;
+          const yearRaw = dateParts[2];
+          const year = yearRaw.length === 2 ? '20' + yearRaw : yearRaw;
+          const date = `${year}-${dateParts[1].padStart(2,'0')}-${dateParts[0].padStart(2,'0')}`;
           const time = startParts[1] ? startParts[1].slice(0, 5) : '';
           const snap = isSnap(date, time);
           const kwh = parseFloat(parts[iKwh].trim().replace(',','.'));
