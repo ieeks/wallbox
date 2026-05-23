@@ -10,7 +10,7 @@ Aktuell können Einträge nur gelöscht werden. Ein Edit-Modus soll erlauben, kW
 
 ---
 
-## [ ] 2. go-e Live-Status Card
+## [x] 2. go-e Live-Status Card
 
 Dashboard-Card die zeigt ob das Auto gerade lädt — direkt von der go-e API.
 

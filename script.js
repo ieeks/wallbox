@@ -76,6 +76,8 @@ let settings = JSON.parse(localStorage.getItem('lf_settings') || 'null') || {
   comp_ev_verbrauch_kwh: 20.0,
   comp_benzin_preis: 1.80,
   comp_wallbox_installation: 2685.40,
+  goe_serial: '',
+  goe_token: '',
 };
 settings = {
   comp_tesla_kwh: 0.48,
@@ -87,6 +89,8 @@ settings = {
   comp_ev_verbrauch_kwh: 20.0,
   comp_benzin_preis: 1.80,
   comp_wallbox_installation: 2685.40,
+  goe_serial: '',
+  goe_token: '',
   ...settings,
 };
 let currentPeriod = 'month';
@@ -1005,6 +1009,8 @@ function toggleSettings() {
     document.getElementById('set-ev-kwh').value = settings.comp_ev_verbrauch_kwh;
     document.getElementById('set-benzin-preis').value = settings.comp_benzin_preis;
     document.getElementById('set-wallbox-installation').value = settings.comp_wallbox_installation;
+    document.getElementById('set-goe-serial').value = settings.goe_serial || '';
+    document.getElementById('set-goe-token').value = settings.goe_token || '';
     m.classList.add('show');
   }
 }
@@ -1022,10 +1028,13 @@ function saveSettings() {
   settings.comp_ev_verbrauch_kwh = parseFloat(document.getElementById('set-ev-kwh').value) || 20.0;
   settings.comp_benzin_preis = parseFloat(document.getElementById('set-benzin-preis').value) || 1.80;
   settings.comp_wallbox_installation = parseFloat(document.getElementById('set-wallbox-installation').value) || 2685.40;
+  settings.goe_serial = document.getElementById('set-goe-serial').value.trim();
+  settings.goe_token = document.getElementById('set-goe-token').value.trim();
   applyTheme();
   persist();
   toggleSettings();
   initAddPage();
+  startLiveStatus();
   showToast('Einstellungen gespeichert');
 }
 
@@ -1383,9 +1392,152 @@ function showDetail(id) {
 }
 
 // =====================================================================
+// GO-E LIVE STATUS
+// =====================================================================
+let liveStatusInterval = null;
+let liveStatusData = null;
+let liveStatusError = null;
+
+const GOE_CAR_STATES = {
+  1: { label: 'Kein Auto verbunden', icon: 'ev_station', color: 'var(--text-muted)', cls: '' },
+  2: { label: 'Verbunden – wartet', icon: 'cable', color: 'var(--primary)', cls: 'ls-waiting' },
+  3: { label: 'Lädt gerade', icon: 'bolt', color: 'var(--green)', cls: 'ls-charging' },
+  4: { label: 'Vollgeladen', icon: 'check_circle', color: 'var(--green)', cls: 'ls-done' },
+};
+
+async function fetchLiveStatus() {
+  const serial = (settings.goe_serial || '').trim();
+  const token = (settings.goe_token || '').trim();
+  if (!serial || !token) return;
+
+  try {
+    const res = await fetch(`https://${serial}.api.v3.go-e.io/api/status`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    liveStatusData = await res.json();
+    liveStatusError = null;
+  } catch (e) {
+    liveStatusError = e.message;
+    liveStatusData = null;
+  }
+  renderLiveStatus();
+}
+
+function renderLiveStatus() {
+  const area = document.getElementById('live-status-area');
+  if (!area) return;
+
+  const serial = (settings.goe_serial || '').trim();
+  const token = (settings.goe_token || '').trim();
+  if (!serial || !token) { area.innerHTML = ''; return; }
+
+  if (liveStatusError) {
+    area.innerHTML = `
+      <div class="live-status-card">
+        <div class="ls-header">
+          <span class="material-symbols-outlined ls-icon" style="color:var(--text-muted);">error_outline</span>
+          <div>
+            <div class="ls-label">go-e nicht erreichbar</div>
+            <div class="ls-updated">${liveStatusError}</div>
+          </div>
+        </div>
+      </div>`;
+    return;
+  }
+
+  if (!liveStatusData) {
+    area.innerHTML = `
+      <div class="live-status-card">
+        <div class="ls-header">
+          <span class="material-symbols-outlined ls-icon ls-spin" style="color:var(--text-muted);">sync</span>
+          <div class="ls-label">Verbinde mit go-e…</div>
+        </div>
+      </div>`;
+    return;
+  }
+
+  const car = liveStatusData.car;
+  const wh = liveStatusData.wh ?? 0;
+  const kwh = Math.round((wh / 1000) * 100) / 100;
+  const powerW = liveStatusData.nrg?.[11] ?? 0;
+  const powerKw = Math.round((powerW / 1000) * 10) / 10;
+  const state = GOE_CAR_STATES[car] || { label: `Unbekannt (${car})`, icon: 'help', color: 'var(--text-muted)', cls: '' };
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString('de-AT', { hour: '2-digit', minute: '2-digit' });
+
+  let statsHtml = '';
+  if (car === 3 && kwh > 0) {
+    const snap = isSnap(now.toISOString().split('T')[0], now.toTimeString().slice(0, 5));
+    const r = calcTotal(kwh, settings.defaultEnergy, snap);
+    statsHtml = `
+      <div class="ls-stats">
+        <div class="ls-stat">
+          <div class="ls-stat-val">${fmt(kwh, 2)}<span class="ls-stat-unit"> kWh</span></div>
+          <div class="ls-stat-label">geladen</div>
+        </div>
+        <div class="ls-stat">
+          <div class="ls-stat-val">${fmt(powerKw, 1)}<span class="ls-stat-unit"> kW</span></div>
+          <div class="ls-stat-label">aktuell</div>
+        </div>
+        <div class="ls-stat">
+          <div class="ls-stat-val">~${fmt(r.total, 2)}<span class="ls-stat-unit"> €</span></div>
+          <div class="ls-stat-label">geschätzt</div>
+        </div>
+      </div>`;
+  } else if (car === 4 && kwh > 0) {
+    const r = calcTotal(kwh, settings.defaultEnergy, false);
+    statsHtml = `
+      <div class="ls-stats">
+        <div class="ls-stat">
+          <div class="ls-stat-val">${fmt(kwh, 2)}<span class="ls-stat-unit"> kWh</span></div>
+          <div class="ls-stat-label">geladen</div>
+        </div>
+        <div class="ls-stat">
+          <div class="ls-stat-val">${fmt(r.total, 2)}<span class="ls-stat-unit"> €</span></div>
+          <div class="ls-stat-label">Kosten</div>
+        </div>
+      </div>`;
+  }
+
+  area.innerHTML = `
+    <div class="live-status-card ${state.cls}">
+      <div class="ls-header">
+        <span class="material-symbols-outlined ls-icon" style="color:${state.color};">${state.icon}</span>
+        <div style="flex:1;">
+          <div class="ls-label">${state.label}</div>
+          <div class="ls-updated">Aktualisiert ${timeStr}</div>
+        </div>
+        ${car === 3 ? '<div class="ls-live-dot"></div>' : ''}
+      </div>
+      ${statsHtml}
+    </div>`;
+}
+
+function startLiveStatus() {
+  if (liveStatusInterval) { clearInterval(liveStatusInterval); liveStatusInterval = null; }
+  const serial = (settings.goe_serial || '').trim();
+  const token = (settings.goe_token || '').trim();
+  if (!serial || !token) { renderLiveStatus(); return; }
+
+  liveStatusData = null;
+  liveStatusError = null;
+  renderLiveStatus();
+  fetchLiveStatus();
+  liveStatusInterval = setInterval(() => {
+    if (document.visibilityState !== 'hidden') fetchLiveStatus();
+  }, 30000);
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') fetchLiveStatus();
+});
+
+// =====================================================================
 // INIT
 // =====================================================================
 initAddPage();
 initImport();
 refreshDashboard();
 fetchBenzinpreis();
+startLiveStatus();
