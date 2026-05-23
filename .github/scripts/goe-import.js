@@ -137,7 +137,7 @@ async function run() {
 
   // 5. Kosten berechnen mit Settings aus Firestore inkl. SNAP-Erkennung
   const snap = isSnap(date, time);
-  const r = calcTotal(kwh, energyPrice, false, gab_pct, ust_pct);
+  const r = calcTotal(kwh, energyPrice, snap, gab_pct, ust_pct);
   const { total, bruttoPerKwh } = r;
 
   const dauerMs = status.cdi?.value || 0;
