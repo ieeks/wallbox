@@ -173,6 +173,16 @@ async function syncToCloud() {
   }
 }
 
+function deduplicateCharges(arr) {
+  const seen = new Set();
+  return arr.filter(c => {
+    const key = c.lch ? `lch_${c.lch}` : `${c.date}_${Math.round((c.kwh ?? 0) * 10)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 async function loadFromCloud() {
   if(!firebaseReady) return;
   setSyncStatus('syncing');
@@ -180,33 +190,26 @@ async function loadFromCloud() {
     const doc = await db.collection('haushalte').doc(HOUSEHOLD_DOC).get();
     if(doc.exists) {
       const data = doc.data();
+      if(data.settings) settings = {...settings, ...data.settings};
       if(data.charges && data.charges.length > 0) {
         const cloudIds = new Set(data.charges.map(c => c.id));
         const localOnlyEntries = charges.filter(c => !cloudIds.has(c.id));
         const merged = [...data.charges, ...localOnlyEntries];
-        // De-Dup: lch (primär) oder Datum+kWh (Fallback) — ID ist immer eindeutig, taugt nicht als Inhaltspüfer
-        const seenContent = new Set();
-        charges = merged.filter(c => {
-          const key = c.lch ? `lch_${c.lch}` : `${c.date}_${Math.round((c.kwh ?? 0) * 10)}`;
-          if (seenContent.has(key)) return false;
-          seenContent.add(key);
-          return true;
-        });
-        charges.sort((a,b) => b.date.localeCompare(a.date));
-        const hadDuplicates = charges.length < merged.length;
-        // Push back if local-only entries existed OR duplicates were removed
-        if(localOnlyEntries.length > 0 || hadDuplicates) {
-          localStorage.setItem('lf_charges', JSON.stringify(charges));
-          localStorage.setItem('lf_settings', JSON.stringify(settings));
-          await syncToCloud();
-          return;
+        const deduped = deduplicateCharges(merged);
+        deduped.sort((a,b) => b.date.localeCompare(a.date));
+        charges = deduped;
+        const needsWrite = localOnlyEntries.length > 0 || deduped.length < merged.length;
+        if(needsWrite) {
+          console.log(`Cloud sync: ${localOnlyEntries.length} lokal-only, ${merged.length - deduped.length} Duplikate entfernt → zurückschreiben`);
         }
+        localStorage.setItem('lf_charges', JSON.stringify(charges));
+        localStorage.setItem('lf_settings', JSON.stringify(settings));
+        if(needsWrite) await syncToCloud();
+      } else {
+        localStorage.setItem('lf_charges', JSON.stringify(charges));
+        localStorage.setItem('lf_settings', JSON.stringify(settings));
+        await syncToCloud();
       }
-      if(data.settings) {
-        settings = {...settings, ...data.settings};
-      }
-      localStorage.setItem('lf_charges', JSON.stringify(charges));
-      localStorage.setItem('lf_settings', JSON.stringify(settings));
     } else {
       await syncToCloud();
     }
@@ -224,6 +227,22 @@ function setSyncStatus(status) {
   if(status === 'online') label.textContent = 'Cloud';
   else if(status === 'syncing') label.textContent = 'Sync...';
   else label.textContent = 'Lokal';
+}
+
+async function cleanupDuplicates() {
+  const before = charges.length;
+  charges = deduplicateCharges(charges);
+  charges.sort((a,b) => b.date.localeCompare(a.date));
+  const removed = before - charges.length;
+  if(removed > 0) {
+    localStorage.setItem('lf_charges', JSON.stringify(charges));
+    await syncToCloud();
+    toggleSettings();
+    refreshDashboard();
+    showToast(`${removed} Duplikat${removed !== 1 ? 'e' : ''} entfernt`);
+  } else {
+    showToast('Keine Duplikate gefunden');
+  }
 }
 
 async function clearChargesOnly() {
