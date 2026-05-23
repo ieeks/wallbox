@@ -8,7 +8,7 @@
 <title>Wallbox – E-Auto Lade Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="./styles.css?v=1.6.2"/>
+<link rel="stylesheet" href="./styles.css?v=1.7.0"/>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 </head>
@@ -58,6 +58,8 @@
       <button class="period-btn" onclick="setPeriod('year',this)">Jahr</button>
       <button class="period-btn" onclick="setPeriod('all',this)">Gesamt</button>
     </div>
+
+    <div id="live-status-area"></div>
 
     <div class="dash-stats">
       <div class="stat-card">
@@ -309,6 +311,15 @@
       <div class="setting-label">Installationskosten<small>€ gesamt</small></div>
       <div class="setting-input"><input type="number" id="set-wallbox-installation" step="0.01" min="0" inputmode="decimal"/></div>
     </div>
+    <div class="settings-section-title" style="margin-top:16px;font-weight:600;font-size:13px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.5px;">go-e Live Status</div>
+    <div class="setting-row">
+      <div class="setting-label">Seriennummer<small>6-stellig, z.B. 123456</small></div>
+      <div class="setting-input"><input type="text" id="set-goe-serial" placeholder="123456" maxlength="10" style="width:110px;text-align:left;"/></div>
+    </div>
+    <div class="setting-row">
+      <div class="setting-label">API Token<small>Bearer Token aus go-e Cloud</small></div>
+      <div class="setting-input"><input type="password" id="set-goe-token" placeholder="••••••••" style="width:110px;text-align:left;"/></div>
+    </div>
     <button class="btn-save" onclick="saveSettings()" style="margin-top:20px;">Einstellungen speichern</button>
     <button class="btn-danger" onclick="if(confirm('Alle Daten löschen? (lokal + Cloud)')){clearAllData();}">
       Alle Daten löschen
@@ -316,6 +327,6 @@
   </div>
 </div>
 
-<script src="./script.js?v=1.6.2"></script>
+<script src="./script.js?v=1.7.0"></script>
 </body>
 </html>
