@@ -1552,8 +1552,8 @@ let liveStatusError = null;
 
 const GOE_CAR_STATES = {
   1: { label: 'Kein Auto verbunden', icon: 'ev_station', color: 'var(--text-muted)', cls: '' },
-  2: { label: 'Verbunden – wartet', icon: 'cable', color: 'var(--primary)', cls: 'ls-waiting' },
-  3: { label: 'Lädt gerade', icon: 'bolt', color: 'var(--green)', cls: 'ls-charging' },
+  2: { label: 'Lädt gerade', icon: 'bolt', color: 'var(--green)', cls: 'ls-charging' },
+  3: { label: 'Verbunden – wartet', icon: 'cable', color: 'var(--primary)', cls: 'ls-waiting' },
   4: { label: 'Vollgeladen', icon: 'check_circle', color: 'var(--green)', cls: 'ls-done' },
 };
 
@@ -1619,7 +1619,7 @@ function renderLiveStatus() {
   const timeStr = now.toLocaleTimeString('de-AT', { hour: '2-digit', minute: '2-digit' });
 
   let statsHtml = '';
-  if (car === 3 && kwh > 0) {
+  if (car === 2 && kwh > 0) {
     const snap = isSnap(now.toISOString().split('T')[0], now.toTimeString().slice(0, 5));
     const r = calcTotal(kwh, settings.defaultEnergy, snap);
     statsHtml = `
@@ -1637,7 +1637,7 @@ function renderLiveStatus() {
           <div class="ls-stat-label">geschätzt</div>
         </div>
       </div>`;
-  } else if (car === 4 && kwh > 0) {
+  } else if ((car === 3 || car === 4) && kwh > 0) {
     const r = calcTotal(kwh, settings.defaultEnergy, false);
     statsHtml = `
       <div class="ls-stats">
@@ -1660,7 +1660,7 @@ function renderLiveStatus() {
           <div class="ls-label">${state.label}</div>
           <div class="ls-updated">Aktualisiert ${timeStr}</div>
         </div>
-        ${car === 3 ? '<div class="ls-live-dot"></div>' : ''}
+        ${car === 2 ? '<div class="ls-live-dot"></div>' : ''}
       </div>
       ${statsHtml}
     </div>`;
