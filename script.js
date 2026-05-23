@@ -183,7 +183,15 @@ async function loadFromCloud() {
       if(data.charges && data.charges.length > 0) {
         const cloudIds = new Set(data.charges.map(c => c.id));
         const localOnlyEntries = charges.filter(c => !cloudIds.has(c.id));
-        charges = [...data.charges, ...localOnlyEntries];
+        const merged = [...data.charges, ...localOnlyEntries];
+        // De-Dup: gleiche ID oder gleicher Tag+kWh → nur erster Eintrag bleibt
+        const seen = new Set();
+        charges = merged.filter(c => {
+          const key = c.id || `${c.date}_${Math.round((c.kwh ?? 0) * 10)}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
         charges.sort((a,b) => b.date.localeCompare(a.date));
         // Push merged data back if we had local-only entries
         if(localOnlyEntries.length > 0) {
