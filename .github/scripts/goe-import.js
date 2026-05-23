@@ -113,10 +113,9 @@ async function run() {
   const ust_pct      = fsSettings.ust               || WIEN_TARIFFS.ust_pct;
   console.log(`settings: energyPrice=${energyPrice} | gab=${gab_pct}% | ust=${ust_pct}%`);
 
-  // Duplikat-Check: lch in bestehenden charges suchen
-  // Wenn Eintrag gelöscht wurde, ist lch nicht mehr in charges → wird neu importiert
+  // Duplikat-Check 1: lch (primär)
   if (existing.some(c => c.lch === lch)) {
-    console.log(`Session bereits in charges: lch=${lch} – übersprungen.`);
+    console.log(`Session bereits in charges (lch=${lch}) – übersprungen.`);
     return;
   }
 
@@ -134,6 +133,12 @@ async function run() {
   const [date, time] = viennaFormatter.format(sessionEnd).split(' ');
   // date = YYYY-MM-DD, time = HH:MM
   console.log(`sessionEnd=${sessionEnd.toISOString()} | date=${date} | time=${time}`);
+
+  // Duplikat-Check 2: Datum + kWh (Fallback für Einträge ohne lch, z.B. CSV-Import)
+  if (existing.some(c => c.date === date && Math.abs((c.kwh ?? 0) - kwh) < 0.05)) {
+    console.log(`Session bereits in charges (date=${date} kwh=${kwh}) – übersprungen.`);
+    return;
+  }
 
   // 5. Kosten berechnen mit Settings aus Firestore inkl. SNAP-Erkennung
   const snap = isSnap(date, time);

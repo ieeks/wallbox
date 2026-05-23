@@ -183,7 +183,15 @@ async function loadFromCloud() {
       if(data.charges && data.charges.length > 0) {
         const cloudIds = new Set(data.charges.map(c => c.id));
         const localOnlyEntries = charges.filter(c => !cloudIds.has(c.id));
-        charges = [...data.charges, ...localOnlyEntries];
+        const merged = [...data.charges, ...localOnlyEntries];
+        // De-Dup: gleiche ID oder gleicher Tag+kWh → nur erster Eintrag bleibt
+        const seen = new Set();
+        charges = merged.filter(c => {
+          const key = c.id || `${c.date}_${Math.round((c.kwh ?? 0) * 10)}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
         charges.sort((a,b) => b.date.localeCompare(a.date));
         // Push merged data back if we had local-only entries
         if(localOnlyEntries.length > 0) {
@@ -215,6 +223,22 @@ function setSyncStatus(status) {
   if(status === 'online') label.textContent = 'Cloud';
   else if(status === 'syncing') label.textContent = 'Sync...';
   else label.textContent = 'Lokal';
+}
+
+async function clearChargesOnly() {
+  charges = [];
+  localStorage.setItem('lf_charges', JSON.stringify([]));
+  if (firebaseReady) {
+    try {
+      await db.collection('haushalte').doc(HOUSEHOLD_DOC).set(
+        { charges: [], updatedAt: firebase.firestore.FieldValue.serverTimestamp() },
+        { merge: true }
+      );
+    } catch(e) { console.error(e); }
+  }
+  toggleSettings();
+  refreshDashboard();
+  showToast('Ladedaten gelöscht – Einstellungen beibehalten');
 }
 
 async function clearAllData() {

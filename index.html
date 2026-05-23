@@ -8,7 +8,7 @@
 <title>Wallbox – E-Auto Lade Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="./styles.css?v=1.9.0"/>
+<link rel="stylesheet" href="./styles.css?v=1.9.2"/>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 </head>
@@ -357,12 +357,15 @@
       <div class="setting-input"><input type="password" id="set-goe-token" placeholder="••••••••" style="width:110px;text-align:left;"/></div>
     </div>
     <button class="btn-save" onclick="saveSettings()" style="margin-top:20px;">Einstellungen speichern</button>
-    <button class="btn-danger" onclick="if(confirm('Alle Daten löschen? (lokal + Cloud)')){clearAllData();}">
+    <button class="btn-danger" onclick="if(confirm('Nur Ladedaten löschen? Einstellungen bleiben erhalten.')){clearChargesOnly();}">
+      Ladedaten löschen
+    </button>
+    <button class="btn-danger" onclick="if(confirm('Alle Daten löschen? (lokal + Cloud, inkl. Einstellungen)')){clearAllData();}">
       Alle Daten löschen
     </button>
   </div>
 </div>
 
-<script src="./script.js?v=1.9.0"></script>
+<script src="./script.js?v=1.9.2"></script>
 </body>
 </html>
