@@ -49,13 +49,31 @@ const WIEN_TARIFFS = {
 };
 
 // Sommer-Nieder-Arbeitspreis (SNAP): Apr–Sep, 10:00–16:00
-function isSnap(date, time) {
+// Prüft den Mittelpunkt der aktiven Ladezeit – mit anchor='end' (default: time = Ladeende,
+// rechnet die halbe Dauer zurück) oder anchor='start' (time = Ladebeginn, rechnet vorwärts).
+// Verhindert, dass Nachtladungen mit Abstecken am Vormittag fälschlich SNAP erhalten.
+function isSnap(date, time, durationMs = 0, anchor = 'end') {
   if(!date || !time) return false;
-  const month = new Date(date).getMonth(); // 0=Jan
-  if(month < 3 || month > 8) return false; // Apr=3 … Sep=8
   const [h, m] = time.split(':').map(Number);
-  const minutes = h * 60 + (m || 0);
-  return minutes >= 10 * 60 && minutes < 16 * 60;
+  const anchorMin = h * 60 + (m || 0);
+  const halfMin = Math.floor((durationMs || 0) / 60000 / 2);
+  let checkMin = anchor === 'start' ? anchorMin + halfMin : anchorMin - halfMin;
+  const checkDate = new Date(date);
+  while(checkMin < 0)        { checkMin += 24 * 60; checkDate.setDate(checkDate.getDate() - 1); }
+  while(checkMin >= 24 * 60) { checkMin -= 24 * 60; checkDate.setDate(checkDate.getDate() + 1); }
+  const month = checkDate.getMonth(); // 0=Jan
+  if(month < 3 || month > 8) return false; // Apr=3 … Sep=8
+  return checkMin >= 10 * 60 && checkMin < 16 * 60;
+}
+
+// HH:MM:SS oder HH:MM in Millisekunden umrechnen (0 bei ungültigem Input)
+function dauerToMs(dauer) {
+  if(!dauer || typeof dauer !== 'string') return 0;
+  const parts = dauer.split(':').map(Number);
+  if(parts.some(isNaN)) return 0;
+  if(parts.length === 3) return (parts[0] * 3600 + parts[1] * 60 + parts[2]) * 1000;
+  if(parts.length === 2) return (parts[0] * 3600 + parts[1] * 60) * 1000;
+  return 0;
 }
 
 // =====================================================================
@@ -271,15 +289,43 @@ async function clearAllData() {
   location.reload();
 }
 
+// Einträge mit `dauer` neu prüfen: alte Einträge hatten SNAP nur an einem Zeitpunkt
+// geprüft (z.B. go-e-auto Ladeende). Mittelpunkt-Berechnung kann den Status flippen.
+async function migrateSnapTiming() {
+  let changed = 0;
+  for(const c of charges) {
+    if(!c.dauer) continue;
+    const ms = dauerToMs(c.dauer);
+    if(!ms) continue;
+    // go-e-auto: time = Ladeende → anchor 'end' (rückwärts zur Mitte)
+    // go-e (CSV) und alle anderen: time = Ladebeginn → anchor 'start' (vorwärts zur Mitte)
+    const anchor = c.source === 'go-e-auto' ? 'end' : 'start';
+    const newSnap = isSnap(c.date, c.time, ms, anchor);
+    if(newSnap === !!c.snap) continue;
+    const r = calcTotal(c.kwh, c.energyPrice, newSnap);
+    c.snap = newSnap;
+    c.total = Math.round(r.total * 100) / 100;
+    c.bruttoPerKwh = r.bruttoPerKwh;
+    changed++;
+  }
+  if(changed > 0) {
+    console.log(`SNAP-Migration: ${changed} Eintrag/Einträge korrigiert`);
+    localStorage.setItem('lf_charges', JSON.stringify(charges));
+    if(firebaseReady) await syncToCloud();
+  }
+}
+
 // Beim Start: Daten aus Cloud laden
 if(firebaseReady) {
-  loadFromCloud().then(() => {
+  loadFromCloud().then(async () => {
+    await migrateSnapTiming();
     applyTheme();
     initAddPage();
     refreshDashboard();
   });
 } else {
   setSyncStatus('offline');
+  migrateSnapTiming();
   applyTheme();
 }
 
@@ -919,7 +965,6 @@ function processFile(file) {
           const year = yearRaw.length === 2 ? '20' + yearRaw : yearRaw;
           const date = `${year}-${dateParts[1].padStart(2,'0')}-${dateParts[0].padStart(2,'0')}`;
           const time = startParts[1] ? startParts[1].slice(0, 5) : '';
-          const snap = isSnap(date, time);
           const kwh = parseFloat(parts[iKwh].trim().replace(',','.'));
           if(isNaN(kwh) || kwh <= 0) continue;
           const exists = charges.some(c => c.date === date && Math.abs(c.kwh - kwh) < 0.01);
@@ -927,6 +972,8 @@ function processFile(file) {
           const maxKw = iMaxKw >= 0 ? parseFloat(parts[iMaxKw].trim().replace(',','.')) : null;
           const dauerGesamt = iDauer >= 0 ? parts[iDauer].trim() : null;
           const dauer = iDauerAktiv >= 0 ? parts[iDauerAktiv].trim() : null;
+          // CSV-Start = Steckbeginn → SNAP-Mittelpunkt ab Start vorwärts berechnen
+          const snap = isSnap(date, time, dauerToMs(dauer), 'start');
           const ep = settings.defaultEnergy;
           const r = calcTotal(kwh, ep, snap);
           importPreview.push({
@@ -1474,11 +1521,15 @@ function saveEdit() {
   const time = document.getElementById('edit-time').value;
   if (!kwh || kwh <= 0 || !date) return;
 
-  const snap = isSnap(date, time);
-  const r = calcTotal(kwh, energy, snap);
-
   const idx = charges.findIndex(ch => ch.id === editingId);
   if (idx === -1) return;
+  const existing = charges[idx];
+  // go-e-auto speichert das Ladeende als time → Mittelpunkt rückwärts; sonst
+  // (CSV-Import / manuelle Eingabe) gilt die Zeit als Ladebeginn → vorwärts.
+  const anchor = existing.source === 'go-e-auto' ? 'end' : 'start';
+  const snap = isSnap(date, time, dauerToMs(existing.dauer), anchor);
+  const r = calcTotal(kwh, energy, snap);
+
   charges[idx] = {
     ...charges[idx],
     kwh,

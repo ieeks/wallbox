@@ -19,13 +19,21 @@ const WIEN_TARIFFS = {
 
 const DEFAULT_ENERGY_PRICE = 0.140118; // €/kWh netto
 
-function isSnap(date, time) {
+// SNAP: Apr–Sep, 10:00–16:00. time = Ladeende, durationMs = aktive Ladedauer →
+// es wird der Mittelpunkt der Ladezeit geprüft, damit Nachtladungen mit Abstecken
+// am Vormittag nicht fälschlich den 20% Netznutzungs-Rabatt erhalten.
+function isSnap(date, time, durationMs = 0) {
   if (!date || !time) return false;
-  const month = new Date(date).getMonth(); // 0=Jan
-  if (month < 3 || month > 8) return false; // Apr–Sep
   const [h, m] = time.split(':').map(Number);
-  const minutes = h * 60 + (m || 0);
-  return minutes >= 10 * 60 && minutes < 16 * 60;
+  const endMin = h * 60 + (m || 0);
+  const halfMin = Math.floor((durationMs || 0) / 60000 / 2);
+  let checkMin = endMin - halfMin;
+  const checkDate = new Date(date);
+  while (checkMin < 0)        { checkMin += 24 * 60; checkDate.setDate(checkDate.getDate() - 1); }
+  while (checkMin >= 24 * 60) { checkMin -= 24 * 60; checkDate.setDate(checkDate.getDate() + 1); }
+  const month = checkDate.getMonth(); // 0=Jan
+  if (month < 3 || month > 8) return false; // Apr–Sep
+  return checkMin >= 10 * 60 && checkMin < 16 * 60;
 }
 
 function calcTotal(kwh, energyPrice, snap = false, gab_pct = WIEN_TARIFFS.gebrauchsabgabe_pct, ust_pct = WIEN_TARIFFS.ust_pct) {
@@ -141,11 +149,12 @@ async function run() {
   }
 
   // 5. Kosten berechnen mit Settings aus Firestore inkl. SNAP-Erkennung
-  const snap = isSnap(date, time);
+  // SNAP wird über den Mittelpunkt der aktiven Ladezeit geprüft (dauerMs aus cdi)
+  const dauerMs = status.cdi?.value || 0;
+  const snap = isSnap(date, time, dauerMs);
   const r = calcTotal(kwh, energyPrice, snap, gab_pct, ust_pct);
   const { total, bruttoPerKwh } = r;
 
-  const dauerMs = status.cdi?.value || 0;
   const dauerSec = Math.floor(dauerMs / 1000);
   const h = Math.floor(dauerSec / 3600);
   const m = Math.floor((dauerSec % 3600) / 60);
