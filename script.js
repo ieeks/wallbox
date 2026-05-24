@@ -1217,7 +1217,7 @@ function renderSavings() {
     aboTankeZeit = s.comp_tanke_zeit_abo_monat * months;
   }
 
-  function savingCard(label, icon, altCost, saving) {
+  function savingCard(label, icon, altCost, saving, hint = null) {
     const positive = saving > 0;
     const color = positive ? 'var(--green)' : '#ef4444';
     const arrow = positive ? '↓' : '↑';
@@ -1240,6 +1240,7 @@ function renderSavings() {
           <span>${positive ? '✓ Du sparst' : '✗ Du zahlst mehr'}</span>
           <span>${arrow} ${fmt(Math.abs(saving))} €</span>
         </div>
+        ${hint ? `<div class="sc-hint">${hint}</div>` : ''}
       </div>
     `;
   }
@@ -1248,7 +1249,8 @@ function renderSavings() {
   html += savingCard('Tesla Supercharger', '⚡', costTesla, savingTesla);
   html += savingCard('Tanke Wien kWh', '🔵', costTankeKwh, savingTankeKwh);
   if (hasZeit && costTankeZeit !== null) {
-    html += savingCard('Tanke Wien Zeit', '🕐', costTankeZeit, savingTankeZeit);
+    html += savingCard('Tanke Wien Zeit', '🕐', costTankeZeit, savingTankeZeit,
+      'Tanke Wien rechnet nach Steckdauer – go-e API liefert nur aktive Ladezeit, daher Schätzung');
   } else {
     html += `<div class="savings-card sc-disabled">
       <div class="sc-header"><span class="sc-icon">🕐</span><span class="sc-label">Tanke Wien Zeit</span></div>
@@ -1400,7 +1402,7 @@ function showDetail(id) {
   const kmEV = c.kwh / (s.comp_ev_verbrauch_kwh / 100);
   const costBenzin = kmEV * (s.comp_benzin_verbrauch_l / 100) * s.comp_benzin_preis;
 
-  function scCard(label, icon, altCost, saving) {
+  function scCard(label, icon, altCost, saving, hint = null) {
     const positive = saving > 0;
     const color = positive ? 'var(--green)' : '#ef4444';
     const arrow = positive ? '↓' : '↑';
@@ -1414,6 +1416,7 @@ function showDetail(id) {
           <span>${positive ? '✓ Du sparst' : '✗ Du zahlst mehr'}</span>
           <span>${arrow} ${fmt(Math.abs(saving))} €</span>
         </div>
+        ${hint ? `<div class="sc-hint">${hint}</div>` : ''}
       </div>`;
   }
 
@@ -1422,7 +1425,8 @@ function showDetail(id) {
   savingsHtml += scCard('Tesla Supercharger', '⚡', costTesla, costTesla - myCost);
   savingsHtml += scCard('Tanke Wien kWh', '🔵', costTankeKwh, costTankeKwh - myCost);
   if (hasZeit) {
-    savingsHtml += scCard('Tanke Wien Zeit', '🕐', costTankeZeit, costTankeZeit - myCost);
+    savingsHtml += scCard('Tanke Wien Zeit', '🕐', costTankeZeit, costTankeZeit - myCost,
+      'Tanke Wien rechnet nach Steckdauer – go-e API liefert nur aktive Ladezeit, daher Schätzung');
   } else {
     savingsHtml += `<div class="savings-card sc-disabled">
       <div class="sc-header"><span class="sc-icon">🕐</span><span class="sc-label">Tanke Wien Zeit</span></div>

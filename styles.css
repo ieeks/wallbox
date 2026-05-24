@@ -727,6 +727,12 @@ nav {
   font-size: 14px;
   color: var(--green);
 }
+.sc-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 8px;
+  line-height: 1.3;
+}
 .sc-abo {
   display: flex;
   justify-content: space-between;
