@@ -192,11 +192,16 @@ async function syncToCloud() {
 }
 
 function deduplicateCharges(arr) {
+  // Zwei Keys parallel prüfen: date+kwh fängt Wallbox-Reboot-Duplikate (gleiche
+  // Session, neuer lch) ab; lch fängt manuell editierte kWh-Werte ab.
   const seen = new Set();
   return arr.filter(c => {
-    const key = c.lch ? `lch_${c.lch}` : `${c.date}_${Math.round((c.kwh ?? 0) * 10)}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
+    const dateKwhKey = `dk_${c.date}_${Math.round((c.kwh ?? 0) * 10)}`;
+    const lchKey = c.lch ? `lch_${c.lch}` : null;
+    if (seen.has(dateKwhKey)) return false;
+    if (lchKey && seen.has(lchKey)) return false;
+    seen.add(dateKwhKey);
+    if (lchKey) seen.add(lchKey);
     return true;
   });
 }
