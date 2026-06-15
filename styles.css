@@ -173,9 +173,10 @@ main { padding: 0 20px; max-width: 480px; margin: 0 auto; }
 .lc-cost { text-align:right; }
 .lc-cost .amount { font-family:'Manrope'; font-weight:700; font-size:18px; }
 .lc-cost .kwh { font-size:11px; color:var(--green); margin-top:2px; }
-.lc-meta { display:flex; gap:8px; margin-top:12px; }
+.lc-meta { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
 .lc-meta .tag {
-  flex:1; background:var(--surface-high); border-radius:8px; padding:8px 12px;
+  flex:1 1 calc(50% - 4px); min-width:0;
+  background:var(--surface-high); border-radius:8px; padding:8px 12px;
   font-size:10px; text-transform:uppercase; letter-spacing:0.5px;
 }
 .lc-meta .tag .tag-label { color:var(--text-secondary); }
