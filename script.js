@@ -66,6 +66,23 @@ function isSnap(date, time, durationMs = 0, anchor = 'end') {
   return checkMin >= 10 * 60 && checkMin < 16 * 60;
 }
 
+// =====================================================================
+// TARIF-HISTORIE – datumsabhängiger Energiepreis (netto)
+// Anbieterwechsel (z.B. Wien Energie → Verbund) ändert nur den Energie-
+// Arbeitspreis; Netzentgelte/Abgaben sind immer Wiener Netze.
+// settings.tariffHistory: [{ from:'YYYY-MM-DD'|'', energy:Number, label:String }]
+// `from` leer = „ab Beginn". Ohne passende Periode gilt settings.defaultEnergy.
+// =====================================================================
+function energyPriceFor(date) {
+  const hist = settings.tariffHistory || [];
+  if(!date || hist.length === 0) return settings.defaultEnergy;
+  const match = hist
+    .filter(t => typeof t.energy === 'number' && !isNaN(t.energy) && (t.from || '0000-01-01') <= date)
+    .sort((a, b) => (a.from || '0000-01-01').localeCompare(b.from || '0000-01-01'))
+    .pop();
+  return match ? match.energy : settings.defaultEnergy;
+}
+
 // HH:MM:SS oder HH:MM in Millisekunden umrechnen (0 bei ungültigem Input)
 function dauerToMs(dauer) {
   if(!dauer || typeof dauer !== 'string') return 0;
@@ -82,6 +99,7 @@ function dauerToMs(dauer) {
 let charges = JSON.parse(localStorage.getItem('lf_charges') || '[]');
 let settings = JSON.parse(localStorage.getItem('lf_settings') || 'null') || {
   defaultEnergy: 0.140118,
+  tariffHistory: [],
   gebrauchsabgabe: WIEN_TARIFFS.gebrauchsabgabe_pct,
   ust: WIEN_TARIFFS.ust_pct,
   theme: 'light',
@@ -98,6 +116,7 @@ let settings = JSON.parse(localStorage.getItem('lf_settings') || 'null') || {
   goe_token: '',
 };
 settings = {
+  tariffHistory: [],
   comp_tesla_kwh: 0.48,
   comp_tesla_abo_jahr: 99.00,
   comp_tanke_kwh: 0.39,
@@ -320,10 +339,33 @@ async function migrateSnapTiming() {
   }
 }
 
+// Energiepreis bestehender Ladungen an die Tarif-Historie angleichen (datumsabhängig).
+// Manuell gesetzte Einzelpreise (priceManual) bleiben unangetastet.
+async function migrateTariffPrices() {
+  if(!settings.tariffHistory || settings.tariffHistory.length === 0) return;
+  let changed = 0;
+  for(const c of charges) {
+    if(c.priceManual) continue;
+    const ep = energyPriceFor(c.date);
+    if(ep == null || Math.abs((c.energyPrice || 0) - ep) < 1e-9) continue;
+    const r = calcTotal(c.kwh, ep, !!c.snap);
+    c.energyPrice = ep;
+    c.total = Math.round(r.total * 100) / 100;
+    c.bruttoPerKwh = r.bruttoPerKwh;
+    changed++;
+  }
+  if(changed > 0) {
+    console.log(`Tarif-Migration: ${changed} Eintrag/Einträge angepasst`);
+    localStorage.setItem('lf_charges', JSON.stringify(charges));
+    if(firebaseReady) await syncToCloud();
+  }
+}
+
 // Beim Start: Daten aus Cloud laden
 if(firebaseReady) {
   loadFromCloud().then(async () => {
     await migrateSnapTiming();
+    await migrateTariffPrices();
     applyTheme();
     initAddPage();
     refreshDashboard();
@@ -331,6 +373,7 @@ if(firebaseReady) {
 } else {
   setSyncStatus('offline');
   migrateSnapTiming();
+  migrateTariffPrices();
   applyTheme();
 }
 
@@ -439,7 +482,7 @@ function initAddPage() {
   const nowTime = now.toTimeString().slice(0, 5);
   document.getElementById('inp-date').value = today;
   document.getElementById('inp-time').value = nowTime;
-  document.getElementById('inp-energy').value = settings.defaultEnergy;
+  document.getElementById('inp-energy').value = energyPriceFor(today);
 
   // Tariff breakdown info
   const tb = document.getElementById('tariff-breakdown');
@@ -507,9 +550,12 @@ function updateCalc() {
 ['inp-kwh','inp-energy'].forEach(id => {
   document.getElementById(id).addEventListener('input', updateCalc);
 });
-['inp-date','inp-time'].forEach(id => {
-  document.getElementById(id).addEventListener('change', updateCalc);
+// Datumswechsel zieht automatisch den passenden Energiepreis aus der Tarif-Historie
+document.getElementById('inp-date').addEventListener('change', () => {
+  document.getElementById('inp-energy').value = energyPriceFor(document.getElementById('inp-date').value);
+  updateCalc();
 });
+document.getElementById('inp-time').addEventListener('change', updateCalc);
 
 function saveCharge() {
   const kwh = parseFloat(document.getElementById('inp-kwh').value);
@@ -529,6 +575,7 @@ function saveCharge() {
     snap: snap,
     kwh: kwh,
     energyPrice: energy,
+    priceManual: Math.abs(energy - energyPriceFor(date)) > 1e-9,
     total: Math.round(r.total * 100) / 100,
     bruttoPerKwh: r.bruttoPerKwh,
     created: new Date().toISOString(),
@@ -926,13 +973,14 @@ function processFile(file) {
         const arr = Array.isArray(data) ? data : [data];
         arr.forEach(item => {
           if(item.date && item.kwh) {
-            const ep = item.energy_price || item.energyPrice || settings.defaultEnergy;
+            const epManual = !!(item.energy_price || item.energyPrice);
+            const ep = epManual ? (item.energy_price || item.energyPrice) : energyPriceFor(item.date);
             const exists = charges.some(c => c.date === item.date && Math.abs(c.kwh - item.kwh) < 0.01);
             if(exists) return;
             const r = calcTotal(item.kwh, ep);
             importPreview.push({
               id: Date.now().toString(36) + Math.random().toString(36).substr(2,4),
-              date: item.date, kwh: item.kwh, energyPrice: ep,
+              date: item.date, kwh: item.kwh, energyPrice: ep, priceManual: epManual,
               total: Math.round(r.total*100)/100, bruttoPerKwh: r.bruttoPerKwh,
               created: new Date().toISOString(),
             });
@@ -979,7 +1027,7 @@ function processFile(file) {
           const dauer = iDauerAktiv >= 0 ? parts[iDauerAktiv].trim() : null;
           // CSV-Start = Steckbeginn → SNAP-Mittelpunkt ab Start vorwärts berechnen
           const snap = isSnap(date, time, dauerToMs(dauer), 'start');
-          const ep = settings.defaultEnergy;
+          const ep = energyPriceFor(date);
           const r = calcTotal(kwh, ep, snap);
           importPreview.push({
             id: Date.now().toString(36) + Math.random().toString(36).substr(2,5) + i,
@@ -997,18 +1045,20 @@ function processFile(file) {
           if(parts.length < 2) continue;
           let date = parts[0].trim();
           let kwh = parseFloat(parts[1].trim().replace(',','.'));
-          let ep = parts[2] ? parseFloat(parts[2].trim().replace(',','.')) : settings.defaultEnergy;
+          const epManual = !!parts[2];
+          let ep = epManual ? parseFloat(parts[2].trim().replace(',','.')) : null;
           if(!date || isNaN(kwh) || kwh <= 0) continue;
           if(date.includes('.')) {
             const dp = date.split('.');
             if(dp.length === 3) date = `${dp[2]}-${dp[1].padStart(2,'0')}-${dp[0].padStart(2,'0')}`;
           }
+          if(ep == null || isNaN(ep)) ep = energyPriceFor(date);
           const exists = charges.some(c => c.date === date && Math.abs(c.kwh - kwh) < 0.01);
           if(exists) continue;
           const r = calcTotal(kwh, ep);
           importPreview.push({
             id: Date.now().toString(36) + Math.random().toString(36).substr(2,4),
-            date, kwh, energyPrice: ep,
+            date, kwh, energyPrice: ep, priceManual: epManual,
             total: Math.round(r.total*100)/100, bruttoPerKwh: r.bruttoPerKwh,
             created: new Date().toISOString(),
           });
@@ -1114,6 +1164,7 @@ function toggleSettings() {
     document.getElementById('set-wallbox-installation').value = settings.comp_wallbox_installation;
     document.getElementById('set-goe-serial').value = settings.goe_serial || '';
     document.getElementById('set-goe-token').value = settings.goe_token || '';
+    renderTariffHistory(settings.tariffHistory || []);
     m.classList.add('show');
   }
 }
@@ -1133,12 +1184,57 @@ function saveSettings() {
   settings.comp_wallbox_installation = parseFloat(document.getElementById('set-wallbox-installation').value) || 2685.40;
   settings.goe_serial = document.getElementById('set-goe-serial').value.trim();
   settings.goe_token = document.getElementById('set-goe-token').value.trim();
+  settings.tariffHistory = readTariffRows()
+    .filter(p => typeof p.energy === 'number' && !isNaN(p.energy))
+    .sort((a, b) => (a.from || '0000-01-01').localeCompare(b.from || '0000-01-01'));
   applyTheme();
   persist();
   toggleSettings();
   initAddPage();
   startLiveStatus();
+  // Energiepreise bestehender Ladungen ggf. an die geänderte Historie angleichen
+  Promise.resolve(migrateTariffPrices()).then(() => refreshDashboard());
   showToast('Einstellungen gespeichert');
+}
+
+// =====================================================================
+// TARIF-HISTORIE EDITOR (Einstellungen)
+// =====================================================================
+function tariffRowHTML(p) {
+  const energy = (p.energy != null && !isNaN(p.energy)) ? p.energy : '';
+  return `<div class="tariff-row">
+    <input type="text" class="th-label" placeholder="Anbieter / Tarif" value="${(p.label || '').replace(/"/g, '&quot;')}"/>
+    <input type="date" class="th-from" value="${p.from || ''}" title="gültig ab (leer = ab Beginn)"/>
+    <input type="number" class="th-energy" step="0.0001" inputmode="decimal" placeholder="€/kWh netto" value="${energy}"/>
+    <button type="button" class="th-del" title="Entfernen" onclick="removeTariffRow(this)">✕</button>
+  </div>`;
+}
+
+function readTariffRows() {
+  return [...document.querySelectorAll('#tariff-history-list .tariff-row')].map(row => ({
+    label: row.querySelector('.th-label').value.trim(),
+    from: row.querySelector('.th-from').value,
+    energy: parseFloat(row.querySelector('.th-energy').value),
+  }));
+}
+
+function renderTariffHistory(periods) {
+  const list = document.getElementById('tariff-history-list');
+  if(!list) return;
+  list.innerHTML = (periods && periods.length)
+    ? periods.map(tariffRowHTML).join('')
+    : '<div class="tariff-empty">Keine Perioden – der Standard-Energiepreis gilt für alle Ladungen.</div>';
+}
+
+function addTariffRow() {
+  const periods = readTariffRows();
+  periods.push({ label: '', from: '', energy: '' });
+  renderTariffHistory(periods);
+}
+
+function removeTariffRow(btn) {
+  btn.closest('.tariff-row').remove();
+  if(!document.querySelector('#tariff-history-list .tariff-row')) renderTariffHistory([]);
 }
 
 // =====================================================================
@@ -1385,7 +1481,7 @@ function showDetail(id) {
     return null;
   }
 
-  const ep = c.energyPrice || settings.defaultEnergy;
+  const ep = c.energyPrice || energyPriceFor(c.date);
   const snap = c.snap || false;
   const r = calcTotal(c.kwh, ep, snap);
   const bd = r.breakdown;
@@ -1511,7 +1607,7 @@ function openEdit(id) {
   if (!c) return;
   editingId = id;
   document.getElementById('edit-kwh').value = c.kwh;
-  document.getElementById('edit-energy').value = c.energyPrice || settings.defaultEnergy;
+  document.getElementById('edit-energy').value = c.energyPrice || energyPriceFor(c.date);
   document.getElementById('edit-date').value = c.date;
   document.getElementById('edit-time').value = c.time || '';
   document.getElementById('edit-modal').classList.add('show');
@@ -1543,6 +1639,8 @@ function saveEdit() {
     ...charges[idx],
     kwh,
     energyPrice: energy,
+    // Weicht der Preis von der Tarif-Historie ab, gilt er als manuell → bleibt bei der Migration unangetastet
+    priceManual: Math.abs(energy - energyPriceFor(date)) > 1e-9,
     date,
     time: time || null,
     snap,

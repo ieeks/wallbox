@@ -8,7 +8,7 @@
 <title>Wallbox – E-Auto Lade Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="./styles.css?v=1.9.10"/>
+<link rel="stylesheet" href="./styles.css?v=1.10.0"/>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 </head>
@@ -308,6 +308,10 @@
       <div class="setting-label">USt<small>% (Standard: 20%)</small></div>
       <div class="setting-input"><input type="number" id="set-ust" step="0.1" inputmode="decimal"/></div>
     </div>
+    <div class="settings-section-title" style="margin-top:16px;font-weight:600;font-size:13px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.5px;">Tarif-Historie</div>
+    <div class="setting-hint">Energiepreis (netto) pro Zeitraum – z.&nbsp;B. nach einem Anbieterwechsel. Jede Ladung nutzt automatisch den Preis, der zu ihrem Datum passt. „Ab"-Datum leer = ab Beginn. Ohne passende Periode gilt der Standard-Energiepreis oben.</div>
+    <div id="tariff-history-list"></div>
+    <button type="button" class="tariff-add-btn" onclick="addTariffRow()">+ Periode hinzufügen</button>
     <div class="settings-section-title" style="margin-top:16px;font-weight:600;font-size:13px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.5px;">Vergleichspreise</div>
     <div class="setting-row">
       <div class="setting-label">Tesla Supercharger<small>€/kWh</small></div>
@@ -369,6 +373,6 @@
   </div>
 </div>
 
-<script src="./script.js?v=1.9.10"></script>
+<script src="./script.js?v=1.10.0"></script>
 </body>
 </html>

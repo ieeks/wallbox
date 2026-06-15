@@ -18,7 +18,7 @@ sehen Nutzer nach einem Deploy noch die alte Version.
 
 ---
 
-## Aktuelle Version: 1.9.10
+## Aktuelle Version: 1.10.0
 
 ---
 
@@ -55,6 +55,19 @@ Header: `Authorization: Bearer $GOE_TOKEN`
 - `FIREBASE_SERVICE_ACCOUNT` — vollständiger Service-Account-JSON
 
 ---
+
+## Tarif-Historie (datumsabhängiger Energiepreis)
+
+- `settings.tariffHistory`: `[{ from:'YYYY-MM-DD'|'', energy:Number, label:String }]`
+  (`from` leer = „ab Beginn"). Nur der Energie-Arbeitspreis variiert pro Anbieter –
+  Netzentgelte/Abgaben sind immer Wiener Netze.
+- `energyPriceFor(date)` → Preis der jüngsten Periode mit `from <= date`, sonst `settings.defaultEnergy`.
+- Neue Ladungen (manuell, CSV, go-e-CSV/JSON-Import) ziehen den datums-passenden Preis.
+- `migrateTariffPrices()` läuft beim Start (nach `migrateSnapTiming`) und gleicht
+  `energyPrice`/`total`/`bruttoPerKwh` bestehender Ladungen an die Historie an.
+- `priceManual: true` (manuell gesetzter Preis via Edit/expliziter Import) → von der Migration ausgenommen.
+- `settings.defaultEnergy` bleibt aktueller Preis/Fallback (go-e-Auto-Import liest ihn aus Firestore – immer „jetzt").
+- Editor in den Einstellungen: `renderTariffHistory` / `readTariffRows` / `addTariffRow` / `removeTariffRow`.
 
 ## Ersparnis-Vergleich (renderSavings)
 
