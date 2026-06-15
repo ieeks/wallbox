@@ -11,6 +11,7 @@ Berechnet die echten Kosten jeder Ladung inkl. aller Wiener Netzentgelte, Abgabe
 ## Features
 
 - **Exakte Kostenberechnung** – Netznutzung, Netzverlust, Förderbeitrag, Elektrizitätsabgabe, Gebrauchsabgabe (7%), USt (20%)
+- **Tarif-Historie** – datumsabhängiger Energiepreis (netto) pro Zeitraum, z. B. nach einem Anbieterwechsel (Wien Energie → Verbund). Jede Ladung nutzt automatisch den zu ihrem Datum passenden Preis; bestehende Ladungen werden beim Start angeglichen (manuell gesetzte Einzelpreise bleiben unangetastet)
 - **Sommer-Nieder-Arbeitspreis (SNAP)** – automatische Erkennung: Apr–Sep, 10–16 Uhr → –20% auf Netznutzungsentgelt
 - **Ersparnis-Vergleich** – Dashboard zeigt Ersparnis vs. Tesla Supercharger, Tanke Wien (kWh/Zeit) und Benziner (Tiguan)
 - **Benzinpreis live** – E-Control API liefert aktuellen Median-Benzinpreis Wien beim App-Start
