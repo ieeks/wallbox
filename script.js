@@ -152,12 +152,45 @@ function applyTheme() {
 // =====================================================================
 // E-CONTROL SPRITPREIS API – Median der günstigsten Tankstellen Wien
 // =====================================================================
+// Der Live-Preis wird bewusst NICHT in `settings` geschrieben:
+// settings wird persistiert (localStorage + Firestore) und würde sonst den
+// manuell hinterlegten Fallback-Preis dauerhaft überschreiben. Ausserdem
+// würde das asynchrone loadFromCloud() den frisch geholten Wert je nach
+// Reihenfolge wieder plattmachen.
+let benzinPreisLive = null;      // Median aus der E-Control API (€/L)
+let benzinPreisStatus = 'pending'; // 'pending' | 'live' | 'fallback'
+let benzinPreisCount = 0;        // Anzahl Tankstellen im Median
+let benzinPreisZeit = null;      // Zeitpunkt des Abrufs
+
+// Effektiv verwendeter Benzinpreis: Live-Wert, sonst Wert aus den Einstellungen
+function benzinPreis() {
+  return benzinPreisLive !== null ? benzinPreisLive : settings.comp_benzin_preis;
+}
+
+// Badge-Text – macht sichtbar, WOHER der angezeigte Preis stammt
+function benzinPreisLabel() {
+  const wert = `ℹ️ Benzinpreis: ${fmt(benzinPreis(), 3)} €/L`;
+  if (benzinPreisStatus === 'live') {
+    const zeit = benzinPreisZeit
+      ? benzinPreisZeit.toLocaleTimeString('de-AT', { hour: '2-digit', minute: '2-digit' })
+      : '';
+    return `${wert} – Median der ${benzinPreisCount} günstigsten Tankstellen Wien `
+      + `(E-Control, Super 95${zeit ? ', ' + zeit : ''})`;
+  }
+  if (benzinPreisStatus === 'pending') {
+    return `${wert} – eigener Wert (E-Control wird geladen …)`;
+  }
+  return `${wert} – eigener Wert aus den Einstellungen (E-Control nicht erreichbar)`;
+}
+
 async function fetchBenzinpreis() {
   try {
+    // includeClosed=true: sonst hängt der Median von der Uhrzeit ab
+    // (nachts fallen die geschlossenen Tankstellen aus der Stichprobe).
     const url = 'https://api.e-control.at/sprit/1.0/search/gas-stations/by-address' +
-      '?latitude=48.2082&longitude=16.3738&fuelType=SUP&includeClosed=false';
+      '?latitude=48.2082&longitude=16.3738&fuelType=SUP&includeClosed=true';
     const res = await fetch(url);
-    if (!res.ok) return;
+    if (!res.ok) throw new Error('HTTP ' + res.status);
     const stations = await res.json();
 
     const prices = [];
@@ -169,7 +202,7 @@ async function fetchBenzinpreis() {
       }
     });
 
-    if (prices.length === 0) return;
+    if (prices.length === 0) throw new Error('keine Preise in der Antwort');
 
     prices.sort((a, b) => a - b);
     const mid = Math.floor(prices.length / 2);
@@ -177,15 +210,16 @@ async function fetchBenzinpreis() {
       ? prices[mid]
       : (prices[mid - 1] + prices[mid]) / 2;
 
-    settings.comp_benzin_preis = Math.round(median * 1000) / 1000;
-
-    const badge = document.getElementById('benzin-preis-badge');
-    if (badge) badge.textContent = 'ℹ️ Benzinpreis: ' + fmt(settings.comp_benzin_preis, 3) + ' €/L (E-Control Wien)';
-
-    renderSavings();
+    benzinPreisLive = Math.round(median * 1000) / 1000;
+    benzinPreisCount = prices.length;
+    benzinPreisZeit = new Date();
+    benzinPreisStatus = 'live';
   } catch (e) {
-    console.log('E-Control API nicht erreichbar, Fallback auf gespeicherten Preis');
+    benzinPreisLive = null;
+    benzinPreisStatus = 'fallback';
+    console.log('E-Control API nicht erreichbar, Fallback auf gespeicherten Preis:', e.message);
   }
+  refreshDashboard();
 }
 
 function setThemeFromToggle(isLight) {
@@ -1355,7 +1389,7 @@ function renderSavings() {
   }
   // Benzin-Vergleich
   const kmEV = totalKwh / (s.comp_ev_verbrauch_kwh / 100);
-  const costBenzin = kmEV * (s.comp_benzin_verbrauch_l / 100) * s.comp_benzin_preis;
+  const costBenzin = kmEV * (s.comp_benzin_verbrauch_l / 100) * benzinPreis();
   const savingBenzin = costBenzin - totalCost;
   html += `
     <div class="savings-card">
@@ -1381,7 +1415,7 @@ function renderSavings() {
         <span>${savingBenzin > 0 ? '↓' : '↑'} ${fmt(Math.abs(savingBenzin))} €</span>
       </div>
       <div class="sc-abo" id="benzin-preis-badge">
-        ℹ️ Benzinpreis: ${fmt(s.comp_benzin_preis, 3)} €/L (E-Control Wien)
+        ${benzinPreisLabel()}
       </div>
     </div>
   `;
@@ -1411,7 +1445,7 @@ function renderAmortisation() {
   const savingTankeAll = charges.reduce((sum, c) => sum + (c.kwh * s.comp_tanke_kwh) - c.total, 0);
   const savingBenzinAll = charges.reduce((sum, c) => {
     const km = c.kwh / (s.comp_ev_verbrauch_kwh / 100);
-    const benzinCost = km * (s.comp_benzin_verbrauch_l / 100) * s.comp_benzin_preis;
+    const benzinCost = km * (s.comp_benzin_verbrauch_l / 100) * benzinPreis();
     return sum + benzinCost - c.total;
   }, 0);
 
@@ -1496,7 +1530,7 @@ function showDetail(id) {
   const costTankeKwh = c.kwh * s.comp_tanke_kwh;
   const costTankeZeit = hasZeit ? minutes * s.comp_tanke_zeit_min : null;
   const kmEV = c.kwh / (s.comp_ev_verbrauch_kwh / 100);
-  const costBenzin = kmEV * (s.comp_benzin_verbrauch_l / 100) * s.comp_benzin_preis;
+  const costBenzin = kmEV * (s.comp_benzin_verbrauch_l / 100) * benzinPreis();
 
   function scCard(label, icon, altCost, saving, hint = null) {
     const positive = saving > 0;
@@ -1540,7 +1574,7 @@ function showDetail(id) {
         <span>${savingBenzin > 0 ? '✓ Du sparst' : '✗ Du zahlst mehr'}</span>
         <span>${savingBenzin > 0 ? '↓' : '↑'} ${fmt(Math.abs(savingBenzin))} €</span>
       </div>
-      <div class="sc-abo">ℹ️ Benzinpreis: ${fmt(s.comp_benzin_preis, 3)} €/L (E-Control Wien)</div>
+      <div class="sc-abo">${benzinPreisLabel()}</div>
     </div>`;
   savingsHtml += `</div>`;
 
