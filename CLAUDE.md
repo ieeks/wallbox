@@ -18,7 +18,7 @@ sehen Nutzer nach einem Deploy noch die alte Version.
 
 ---
 
-## Aktuelle Version: 1.10.1
+## Aktuelle Version: 1.10.2
 
 ---
 
@@ -34,8 +34,15 @@ Header: `Authorization: Bearer $GOE_TOKEN`
 **Erkennungslogik:**
 - `car === 1` (idle/abgesteckt) + `wh > 10` + `lch` neu → neue Session
 - Session-Zeitpunkt: `now - (rbt - lccfc)` → exakter Endzeitpunkt für SNAP
-- Duplikat-Check: `lch` in bestehendem `charges[]` suchen (nicht lastProcessedSession)
+- Duplikat-Check 1: `lch` in bestehendem `charges[]` suchen (nicht lastProcessedSession)
+- Duplikat-Check 2 (`date`+`kwh`): greift **nur gegen Einträge ohne `lch`** (CSV/manuell).
+  Sonst würde eine echte zweite Session am selben Tag mit ähnlicher kWh-Menge nie importiert.
+  Zeitvergleich geht nicht: CSV speichert den Steckbeginn, der Auto-Import den Ladeschluss.
 - Gelöschte Einträge können re-importiert werden (lch fehlt → wird neu gespeichert)
+
+**Dedup in der App (`deduplicateCharges`):** Key ist `date` + `time` + `kwh` (0,1er-Raster),
+parallel dazu `lch`. Die Uhrzeit gehört zwingend in den Key – ohne sie löscht `loadFromCloud()`
+bei jedem Start eine zweite echte Ladung desselben Tages und schreibt das in die Cloud zurück.
 
 **Kosten:**
 - `energyPrice`, `gebrauchsabgabe`, `ust` aus Firestore `settings` (App-Einstellungen)
@@ -66,6 +73,11 @@ Header: `Authorization: Bearer $GOE_TOKEN`
 - `migrateTariffPrices()` läuft beim Start (nach `migrateSnapTiming`) und gleicht
   `energyPrice`/`total`/`bruttoPerKwh` bestehender Ladungen an die Historie an.
 - `priceManual: true` (manuell gesetzter Preis via Edit/expliziter Import) → von der Migration ausgenommen.
+  Wird beim Import am **geparsten Wert** festgemacht, nicht an der Existenz der Spalte/des Feldes –
+  sonst nimmt Müll in Spalte 3 den Eintrag dauerhaft aus der Migration.
+- Der Ersparnis-Chip in Liste und „Letzte Ladung" (`calcSavingChip(c)`) rechnet die Wallbox-Seite
+  aus dem gespeicherten `c.total` – also mit Tarif und SNAP-Status **dieser** Ladung, nicht mit
+  `settings.defaultEnergy`. Die Vergleichstarife (Tesla/Tanke) haben bewusst keine Historie.
 - `settings.defaultEnergy` bleibt aktueller Preis/Fallback (go-e-Auto-Import liest ihn aus Firestore – immer „jetzt").
 - Editor in den Einstellungen: `renderTariffHistory` / `readTariffRows` / `addTariffRow` / `removeTariffRow`.
 

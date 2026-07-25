@@ -142,9 +142,16 @@ async function run() {
   // date = YYYY-MM-DD, time = HH:MM
   console.log(`sessionEnd=${sessionEnd.toISOString()} | date=${date} | time=${time}`);
 
-  // Duplikat-Check 2: Datum + kWh (Fallback für Einträge ohne lch, z.B. CSV-Import)
-  if (existing.some(c => c.date === date && Math.abs((c.kwh ?? 0) - kwh) < 0.05)) {
-    console.log(`Session bereits in charges (date=${date} kwh=${kwh}) – übersprungen.`);
+  // Duplikat-Check 2: Datum + kWh – ausschliesslich gegen Einträge OHNE lch
+  // (CSV-Import, manuell). Einträge mit lch sind bereits durch Check 1 abgedeckt.
+  // Ohne die !c.lch-Einschränkung würde eine echte zweite Session am selben Tag
+  // mit ähnlicher kWh-Menge nie importiert – sie taucht dann nirgends auf und
+  // ist im Gegensatz zu einem Duplikat auch nicht nachträglich zu retten.
+  // Zeitvergleich geht hier nicht: CSV speichert den Steckbeginn, dieser Import
+  // den Ladeschluss.
+  const dupOhneLch = existing.find(c => !c.lch && c.date === date && Math.abs((c.kwh ?? 0) - kwh) < 0.05);
+  if (dupOhneLch) {
+    console.log(`Session bereits in charges ohne lch (date=${date} kwh=${kwh}) – übersprungen.`);
     return;
   }
 
