@@ -18,7 +18,7 @@ sehen Nutzer nach einem Deploy noch die alte Version.
 
 ---
 
-## Aktuelle Version: 1.10.0
+## Aktuelle Version: 1.10.1
 
 ---
 
@@ -77,8 +77,18 @@ Vier Karten im Dashboard:
 3. **Tanke Wien Zeit** – min-Tarif × Ladezeit (nur wenn `c.dauer` vorhanden)
 4. **Tiguan Benzin** – km-Schätzung via `comp_ev_verbrauch_kwh`, Benzinkosten via E-Control API
 
-**E-Control API:** `fetchBenzinpreis()` lädt beim Start Median-Benzinpreis Wien (SUP, Wien Mitte).
-Fallback auf `settings.comp_benzin_preis` falls API offline.
+**E-Control API:** `fetchBenzinpreis()` lädt beim Start den Median-Benzinpreis Wien
+(SUP, `by-address` um Wien Mitte, `includeClosed=true` → Stichprobe unabhängig von der Uhrzeit).
+Die API liefert nur die *günstigsten* Tankstellen der Umgebung – der Wert ist also
+bewusst ein Median der günstigsten Stationen, kein Wien-Durchschnitt.
+
+- Live-Wert liegt in `benzinPreisLive` (Modul-Variable), **nicht** in `settings` –
+  sonst würde er über `persist()`/`syncToCloud()` den manuellen Fallback dauerhaft
+  überschreiben und mit dem asynchronen `loadFromCloud()` um die Reihenfolge rennen.
+- `benzinPreis()` → Live-Wert, sonst `settings.comp_benzin_preis` (Fallback aus Einstellungen).
+  Wird von `renderSavings`, `renderAmortisation` und der Detailansicht verwendet.
+- `benzinPreisLabel()` → Badge-Text inkl. Quelle: live (mit Anzahl Tankstellen + Uhrzeit),
+  `pending` oder `fallback` (API nicht erreichbar).
 
 **Settings-Keys für Vergleich:**
 - `comp_tesla_kwh`, `comp_tesla_abo_jahr`
