@@ -83,6 +83,14 @@ function energyPriceFor(date) {
   return match ? match.energy : settings.defaultEnergy;
 }
 
+// Lokales Datum als YYYY-MM-DD. NICHT toISOString() verwenden: das liefert UTC
+// und damit zwischen 00:00 und 02:00 Wiener Zeit noch den Vortag – während
+// toTimeString() lokal bleibt. Datum und Uhrzeit passten dann nicht zusammen.
+function localDateStr(d = new Date()) {
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 // HH:MM:SS oder HH:MM in Millisekunden umrechnen (0 bei ungültigem Input)
 function dauerToMs(dauer) {
   if(!dauer || typeof dauer !== 'string') return 0;
@@ -245,11 +253,19 @@ async function syncToCloud() {
 }
 
 function deduplicateCharges(arr) {
-  // Zwei Keys parallel prüfen: date+kwh fängt Wallbox-Reboot-Duplikate (gleiche
-  // Session, neuer lch) ab; lch fängt manuell editierte kWh-Werte ab.
+  // Zwei Keys parallel prüfen: date+time+kwh fängt Wallbox-Reboot-Duplikate
+  // (gleiche Session, neuer lch) ab; lch fängt manuell editierte kWh-Werte ab.
+  //
+  // Die Uhrzeit MUSS Teil des Keys sein: ohne sie ist eine zweite echte Ladung
+  // am selben Tag mit ähnlicher kWh-Menge (z.B. 12,00 früh / 12,04 abends) von
+  // einem Duplikat nicht unterscheidbar und wird beim Start still gelöscht –
+  // inkl. Rückschreiben in die Cloud, also unwiederbringlich.
+  // Preis dafür: ein Reboot-Duplikat, dessen Zeitpunkt neu berechnet wurde,
+  // rutscht durch. Das ist sichtbar und per Swipe oder „Duplikate entfernen"
+  // korrigierbar – ein still gelöschter Eintrag nicht.
   const seen = new Set();
   return arr.filter(c => {
-    const dateKwhKey = `dk_${c.date}_${Math.round((c.kwh ?? 0) * 10)}`;
+    const dateKwhKey = `dk_${c.date}_${c.time || '-'}_${Math.round((c.kwh ?? 0) * 10)}`;
     const lchKey = c.lch ? `lch_${c.lch}` : null;
     if (seen.has(dateKwhKey)) return false;
     if (lchKey && seen.has(lchKey)) return false;
@@ -457,12 +473,23 @@ function calcTotal(kwh, energyPrice, snap = false) {
 // =====================================================================
 // SAVINGS CHIP – Ersparnis vs. günstigster Alternative pro Ladung
 // =====================================================================
-function calcSavingChip(kwh) {
+// Wallbox-Seite immer aus dem gespeicherten `c.total` – das trägt den Tarif und
+// den SNAP-Status der jeweiligen Ladung. Vorher wurde hier mit
+// settings.defaultEnergy und snap:false neu gerechnet, also mit dem HEUTIGEN
+// Preis: alte Ladungen erschienen dadurch teurer als sie waren und der Chip
+// widersprach der Detailansicht.
+// Die Vergleichstarife (Tesla/Tanke) haben bewusst keine Historie – sie sind
+// immer der aktuelle Stand aus den Einstellungen.
+function calcSavingChip(c) {
+  const kwh = c.kwh ?? 0;
   const costTesla = kwh * settings.comp_tesla_kwh;
   const costTanke = kwh * settings.comp_tanke_kwh;
 
-  const r = calcTotal(kwh, settings.defaultEnergy, false);
-  const wallbox = r.total;
+  // Fallback für Altdaten ohne brauchbares total (z.B. total:null aus einem
+  // früher leer gespeicherten Preisfeld)
+  const wallbox = isFinite(c.total)
+    ? c.total
+    : calcTotal(kwh, energyPriceFor(c.date), !!c.snap).total;
 
   const savings = [
     { label: 'Tesla', saving: costTesla - wallbox },
@@ -472,8 +499,8 @@ function calcSavingChip(kwh) {
   return savings.reduce((a, b) => a.saving > b.saving ? a : b);
 }
 
-function savingChipHTML(kwh) {
-  const best = calcSavingChip(kwh);
+function savingChipHTML(c) {
+  const best = calcSavingChip(c);
   if (best.saving <= 0) return '';
   return `<div class="tag saving-chip">
     <div class="tag-label">Ersparnis</div>
@@ -512,7 +539,7 @@ function showPage(name, btn) {
 // =====================================================================
 function initAddPage() {
   const now = new Date();
-  const today = now.toISOString().split('T')[0];
+  const today = localDateStr(now);
   const nowTime = now.toTimeString().slice(0, 5);
   document.getElementById('inp-date').value = today;
   document.getElementById('inp-time').value = nowTime;
@@ -540,13 +567,15 @@ function initAddPage() {
 
 function updateCalc() {
   const kwh = parseFloat(document.getElementById('inp-kwh').value) || 0;
-  const energy = parseFloat(document.getElementById('inp-energy').value) || 0;
+  const energy = parseFloat(document.getElementById('inp-energy').value);
   const date = document.getElementById('inp-date').value;
   const time = document.getElementById('inp-time').value;
   const snap = isSnap(date, time);
   const btn = document.getElementById('btn-save');
 
-  if(kwh <= 0) {
+  // Leeres/ungültiges Preisfeld muss den Speichern-Button sperren: ein NaN-Preis
+  // landet als total:null in Firestore und lässt fmt() beim Rendern werfen.
+  if(kwh <= 0 || !isFinite(energy) || energy < 0) {
     document.getElementById('rc-total').textContent = '0,00';
     document.getElementById('rc-breakdown').innerHTML = '';
     document.getElementById('rc-snap').style.display = 'none';
@@ -599,6 +628,10 @@ function saveCharge() {
   const snap = isSnap(date, time);
 
   if(!kwh || kwh <= 0) return;
+  if(!isFinite(energy) || energy < 0) {
+    showToast('Bitte einen gültigen Energiepreis eingeben');
+    return;
+  }
 
   const r = calcTotal(kwh, energy, snap);
 
@@ -675,7 +708,7 @@ function refreshDashboard() {
           <div class="tag"><div class="tag-label">Preis/kWh</div><div class="tag-value">${fmt(lc.bruttoPerKwh*100,1)} ct</div></div>
           <div class="tag"><div class="tag-label">Status</div><div class="tag-value" style="color:var(--green);white-space:nowrap;">● Abgeschlossen</div></div>
           ${lc.snap ? '<div class="tag"><div class="tag-label">Tarif</div><div class="tag-value" style="color:#16a34a;">☀️ SNAP –20%</div></div>' : ''}
-          ${savingChipHTML(lc.kwh)}
+          ${savingChipHTML(lc)}
         </div>
       </div>
     `;
@@ -704,7 +737,7 @@ function refreshDashboard() {
             <div class="hi-right">
               <div class="hi-cost">${fmt(c.total)} €</div>
               <div class="hi-rate">${fmt(c.bruttoPerKwh*100,1)} ct/kWh${c.snap ? ' ☀️' : ''}</div>
-              <div class="hi-saving">${(() => { const b = calcSavingChip(c.kwh); return b.saving > 0 ? `${b.label}: +${fmt(b.saving)} €` : ''; })()}</div>
+              <div class="hi-saving">${(() => { const b = calcSavingChip(c); return b.saving > 0 ? `${b.label}: +${fmt(b.saving)} €` : ''; })()}</div>
             </div>
             <div class="hi-actions">
               <button class="hi-edit" onclick="event.stopPropagation(); openEdit('${c.id}')" title="Bearbeiten" aria-label="Ladevorgang bearbeiten">
@@ -1007,8 +1040,12 @@ function processFile(file) {
         const arr = Array.isArray(data) ? data : [data];
         arr.forEach(item => {
           if(item.date && item.kwh) {
-            const epManual = !!(item.energy_price || item.energyPrice);
-            const ep = epManual ? (item.energy_price || item.energyPrice) : energyPriceFor(item.date);
+            // priceManual nur setzen, wenn tatsächlich eine gültige Zahl kam –
+            // sonst ist der Eintrag dauerhaft von migrateTariffPrices() ausgenommen,
+            // obwohl nie ein Preis gesetzt wurde.
+            const epRaw = parseFloat(item.energy_price ?? item.energyPrice);
+            const epManual = isFinite(epRaw) && epRaw >= 0;
+            const ep = epManual ? epRaw : energyPriceFor(item.date);
             const exists = charges.some(c => c.date === item.date && Math.abs(c.kwh - item.kwh) < 0.01);
             if(exists) return;
             const r = calcTotal(item.kwh, ep);
@@ -1079,14 +1116,17 @@ function processFile(file) {
           if(parts.length < 2) continue;
           let date = parts[0].trim();
           let kwh = parseFloat(parts[1].trim().replace(',','.'));
-          const epManual = !!parts[2];
-          let ep = epManual ? parseFloat(parts[2].trim().replace(',','.')) : null;
+          // priceManual am geparsten Wert festmachen, nicht an der Existenz der
+          // Spalte: Müll in Spalte 3 hätte den Eintrag sonst als „manuell"
+          // markiert und dauerhaft von migrateTariffPrices() ausgenommen.
+          const epRaw = parts[2] !== undefined ? parseFloat(parts[2].trim().replace(',','.')) : NaN;
+          const epManual = isFinite(epRaw) && epRaw >= 0;
           if(!date || isNaN(kwh) || kwh <= 0) continue;
           if(date.includes('.')) {
             const dp = date.split('.');
             if(dp.length === 3) date = `${dp[2]}-${dp[1].padStart(2,'0')}-${dp[0].padStart(2,'0')}`;
           }
-          if(ep == null || isNaN(ep)) ep = energyPriceFor(date);
+          const ep = epManual ? epRaw : energyPriceFor(date);
           const exists = charges.some(c => c.date === date && Math.abs(c.kwh - kwh) < 0.01);
           if(exists) continue;
           const r = calcTotal(kwh, ep);
@@ -1170,7 +1210,7 @@ function exportData() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `ladefuchs-export-${new Date().toISOString().split('T')[0]}.json`;
+  a.download = `ladefuchs-export-${localDateStr()}.json`;
   a.click();
   URL.revokeObjectURL(url);
   showToast('Export heruntergeladen');
@@ -1815,7 +1855,7 @@ function renderLiveStatus() {
 
   let statsHtml = '';
   if (car === 2 && kwh > 0) {
-    const snap = isSnap(now.toISOString().split('T')[0], now.toTimeString().slice(0, 5));
+    const snap = isSnap(localDateStr(now), now.toTimeString().slice(0, 5));
     const r = calcTotal(kwh, settings.defaultEnergy, snap);
     statsHtml = `
       <div class="ls-stats">
