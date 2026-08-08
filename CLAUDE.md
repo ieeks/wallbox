@@ -18,7 +18,7 @@ sehen Nutzer nach einem Deploy noch die alte Version.
 
 ---
 
-## Aktuelle Version: 1.13.0
+## Aktuelle Version: 1.14.0
 
 ---
 
@@ -169,6 +169,26 @@ Balken darüber rot, darunter grün. Badge zählt die Monate über der Schwelle.
   sonst streicht die Linie durch den Text. Linie liegt per `z-index` **über** den
   Balken – nur so ist „drüber oder drunter" sofort ablesbar.
 - Farbtoken `--red` / `--red-dim` wurden dafür in beide Themes ergänzt (gab es vorher nicht).
+
+---
+
+## Tarif-Erinnerungen (`TARIFF_REMINDERS`, ab v1.14.0)
+
+Die Tarifgrössen stehen als Konstanten in `WIEN_TARIFFS` und müssen zu Stichtagen
+von Hand nachgezogen werden. Damit das nicht untergeht, blendet das Dashboard ab
+dem jeweiligen Datum einen Hinweis ein, bis er quittiert wird.
+
+- `TARIFF_REMINDERS`: `[{ id, from:'YYYY-MM-DD', title, text }]`. `from` ist der Tag,
+  ab dem der Hinweis **erscheint**, nicht zwingend der Tag, ab dem die Änderung gilt.
+- Quittierte IDs liegen in `settings.remindersDone` – also bewusst **in** `settings`,
+  damit sie über `syncToCloud()` auf allen Geräten verschwinden. (Gegenteil von
+  `expandedMonths`, das genau deshalb nicht in `settings` liegt.)
+- Default `remindersDone: []` gehört in den settings-Merge-Block, sonst wirft
+  `dueReminders()` bei Altdaten ohne das Feld.
+- Aktuell zwei Einträge, beide ab 2027-01-01: `sne-tv-2027` (neue Netzentgelte inkl.
+  Leistungspreis) und `winap-2027` (TODO 5).
+- Beim Erledigen eines Punktes gehört der zugehörige Reminder entfernt – sonst bleibt
+  er als Karteileiche stehen und wird irgendwann weggeklickt statt gelesen.
 
 ---
 

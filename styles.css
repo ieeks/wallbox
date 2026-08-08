@@ -154,6 +154,33 @@ main { padding: 0 20px; max-width: 480px; margin: 0 auto; }
 }
 .chart-header .badge.badge-warn { background: var(--red-dim); color: var(--red); }
 
+/* === TARIF-ERINNERUNG === */
+.reminder {
+  background: var(--surface);
+  border: 1px solid var(--amber);
+  border-left: 3px solid var(--amber);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  box-shadow: var(--surface-shadow);
+}
+.rm-head { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+.rm-icon { font-size:18px; color:var(--amber); flex-shrink:0; }
+.rm-title { font-family:'Manrope'; font-weight:700; font-size:14px; }
+.rm-text { font-size:12px; line-height:1.55; color:var(--text-secondary); }
+.rm-text code {
+  font-size:11px; background:var(--surface-high);
+  padding:1px 4px; border-radius:4px;
+}
+.rm-btn {
+  margin-top:10px; width:100%;
+  background:var(--surface-high); color:var(--text-secondary);
+  border:1px solid var(--border); border-radius:8px;
+  padding:8px 12px; font-size:12px; font-family:inherit; cursor:pointer;
+  transition:background .2s;
+}
+.rm-btn:hover { background:var(--surface-highest); color:var(--text); }
+
 /* === MONATS-PEAK (Leistungspreis ab 2027) === */
 .pc-empty { font-size:12px; color:var(--text-muted); text-align:center; padding:24px 0; }
 .pc-plot { position:relative; height:130px; }

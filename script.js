@@ -125,6 +125,7 @@ let settings = JSON.parse(localStorage.getItem('lf_settings') || 'null') || {
 };
 settings = {
   tariffHistory: [],
+  remindersDone: [],
   comp_tesla_kwh: 0.48,
   comp_tesla_abo_jahr: 99.00,
   comp_tanke_kwh: 0.39,
@@ -760,6 +761,7 @@ function refreshDashboard() {
 
   // Chart
   renderPeakChart(filtered);
+  renderReminders();
   renderInsights();
   renderSavings();
   renderAmortisation();
@@ -958,6 +960,69 @@ function setPeriod(p, btn) {
 // Schwelle der SNE-G-V auf Netzebene 7: bis hier gilt der niedrigere
 // Leistungspreis, darüber der höhere.
 const PEAK_THRESHOLD_KW = 10;
+
+// =====================================================================
+// TARIF-ERINNERUNGEN
+// Die Tarifgrössen stehen als Konstanten in WIEN_TARIFFS und müssen zu
+// bestimmten Stichtagen von Hand nachgezogen werden. Damit das nicht
+// untergeht, blendet das Dashboard ab dem jeweiligen Datum einen Hinweis
+// ein, bis er quittiert wird.
+//
+// `from` ist der Stichtag, ab dem der Hinweis erscheint – nicht das Datum,
+// an dem die Änderung gilt. Beim Leistungspreis fällt beides zusammen,
+// bei WiNAP wird bewusst früher erinnert (die Beträge stehen dann schon
+// fest, und der erste Winterzeitraum beginnt am 1.10.).
+// =====================================================================
+const TARIFF_REMINDERS = [
+  {
+    id: 'sne-tv-2027',
+    from: '2027-01-01',
+    title: 'Neue Netzentgelte ab 1.1.2027',
+    text: 'Die SNE-T-V ist in Kraft. In <strong>WIEN_TARIFFS</strong> gehören jetzt die neuen Wiener-Netze-Werte: '
+        + 'Netznutzung Arbeitspreis, Netzverlust, Grundpauschale – und neu der <strong>Leistungspreis</strong> '
+        + '(€/kW auf das höchste 15-Minuten-Mittel des Monats, gestaffelt an der 10-kW-Grenze). '
+        + 'Der Leistungspreis fehlt in der Kostenrechnung dieser App noch komplett.',
+  },
+  {
+    id: 'winap-2027',
+    from: '2027-01-01',
+    title: 'WiNAP umsetzen (TODO 5)',
+    text: 'Der <strong>Winter-Nieder-Arbeitspreis</strong> (Okt–Mär, 22:00–04:00) ist das Gegenstück zu SNAP. '
+        + '<strong>Erst prüfen, ab wann er greift</strong>: die Verordnung gilt ab 1.1.2027, in der Begutachtung '
+        + 'stand aber der Vorschlag, ihn erstmals mit dem Winterzeitraum ab 1.10.2027 anzuwenden. '
+        + 'Danach: Rabattsatz eintragen, <code>isWinap()</code> analog <code>isSnap()</code> bauen – '
+        + 'und im Auto-Import <code>goe-import.js</code> mitgeben, der eine eigene Kopie der Logik hat.',
+  },
+];
+
+function dueReminders() {
+  const today = new Date().toISOString().slice(0, 10);
+  const done = settings.remindersDone || [];
+  return TARIFF_REMINDERS.filter(r => r.from <= today && !done.includes(r.id));
+}
+
+function renderReminders() {
+  const area = document.getElementById('reminder-area');
+  if(!area) return;
+  const due = dueReminders();
+  area.innerHTML = due.map(r => `
+    <div class="reminder">
+      <div class="rm-head">
+        <span class="material-symbols-outlined rm-icon">campaign</span>
+        <span class="rm-title">${r.title}</span>
+      </div>
+      <div class="rm-text">${r.text}</div>
+      <button class="rm-btn" onclick="dismissReminder('${r.id}')">Erledigt – nicht mehr anzeigen</button>
+    </div>`).join('');
+}
+
+function dismissReminder(id) {
+  if(!settings.remindersDone) settings.remindersDone = [];
+  if(!settings.remindersDone.includes(id)) settings.remindersDone.push(id);
+  persist();
+  renderReminders();
+  showToast('Hinweis ausgeblendet');
+}
 
 function renderPeakChart(data) {
   const area = document.getElementById('peak-chart-area');

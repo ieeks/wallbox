@@ -73,6 +73,47 @@ Umsetzung spiegelt die SNAP-Mechanik:
 
 **Blocker:** Rabattsatz noch nicht final; gilt erst ab 01.01.2027 → vorher auf keine Ladung anwenden.
 
-**Kontext (nicht app-relevant, aber im selben Entwurf):**
-- Leistungspreis für Haushalte – E-Auto-Laden wird tendenziell günstiger (gleichmäßiger Bezug, keine großen Spitzen).
+**Offene Frage zum Startdatum (Stand 08.08.2026):** Die Verordnung tritt am 01.01.2027 in Kraft.
+In der Begutachtung stand aber der Vorschlag, WiNAP **erstmals mit dem Winterzeitraum ab 01.10.2027**
+anzuwenden. Vor der Umsetzung klären, sonst wird Jan–Mär 2027 falsch gerechnet.
+
+**Erinnerung ist eingebaut** (ab v1.14.0): `TARIFF_REMINDERS` in `script.js` blendet ab 01.01.2027
+einen Hinweis im Dashboard ein, bis er quittiert wird. Wird dieser Punkt hier erledigt, gehört
+auch der Reminder `winap-2027` entfernt.
+
+**Kontext aus demselben Entwurf:**
 - Netzgebührenbefreiung für Großspeicher ≥ 1 MW / Aggregatoren ≥ 50 kW – für uns irrelevant.
+
+---
+
+## [ ] 6. Leistungspreis ab 2027 in die Kostenrechnung
+
+`calcTotal()` rechnet rein arbeitspreisbasiert. Ab 01.01.2027 hängt ein wesentlicher Teil der
+Netzkosten nicht mehr an den kWh, sondern am **höchsten 15-Minuten-Mittel des Monats**
+(SNE-G-V, Netzebene 7). Das fehlt in der App komplett.
+
+- Zielaufteilung laut E-Control: ca. 50 % Leistungspreis / 50 % Arbeitspreis, gestaffelt über
+  3 Jahre (Einstieg grob 30/70).
+- Staffel: bis 10 kW niedrigerer Satz, darüber höherer (`PEAK_THRESHOLD_KW` gibt es schon).
+- Mindestverrechnung: 20 % der vereinbarten netzwirksamen Leistung, mindestens 2 kW.
+- Kostenrechnung ist bisher **pro Ladung**; der Leistungspreis ist **pro Monat**. Das passt nicht
+  aufeinander – vermutlich eine getrennte Monatsposition statt einer Umlage auf einzelne Ladungen.
+- `maxKw` liegt seit v1.10.3 (Peak-Tracker) bzw. v1.11.0 (CSV-Backfill) vor, das Monats-Peak-
+  Diagramm (v1.13.0) zeigt es bereits.
+
+**Blocker:** €/kW-Beträge für das Netzgebiet Wiener Netze kommen erst mit der SNE-T-V
+(Entwurf Okt 2026, erlassen Dez 2026).
+
+**Achtung – frühere Einschätzung war für diesen Haushalt falsch:** Hier stand mal, E-Auto-Laden
+werde „tendenziell günstiger". Das gilt nur bei gleichmäßigem Bezug. Die E-Control modelliert für
+E-Auto-Haushalte, die unverändert mit 11 kW laden, **+21 %** Netzkosten (bei flexiblem Laden −8,5 %).
+Die eigenen Daten zeigen 3 von 6 Monaten über 10 kW (Apr 10,58 / Jun 10,55 / Aug 10,62 kW) –
+also der teure Fall, nicht der günstige.
+
+---
+
+## [ ] 7. Firestore Security Rules
+
+`haushalte/haushalt` ist ohne Authentifizierung über die REST-API les- **und schreibbar** –
+der öffentliche API-Key aus `script.js` genügt. Unabhängig von allen Tarifthemen, aber der
+gewichtigste offene Punkt.
