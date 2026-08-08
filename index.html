@@ -8,7 +8,7 @@
 <title>Wallbox – E-Auto Lade Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="./styles.css?v=1.11.0"/>
+<link rel="stylesheet" href="./styles.css?v=1.13.0"/>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 </head>
@@ -81,25 +81,13 @@
 
     <div id="month-stats-area"></div>
 
-    <div class="section-title">Verlauf</div>
+    <div class="section-title">⚡ Höchste Ladeleistung / Monat</div>
     <div class="chart-container">
       <div class="chart-header">
-        <span style="font-size:12px;color:var(--text-secondary)">Kosten / Tag</span>
-        <span class="badge" id="chart-badge"></span>
+        <span style="font-size:12px;color:var(--text-secondary)">Basis für den Leistungspreis ab 2027</span>
+        <span class="badge" id="peak-badge"></span>
       </div>
-      <div id="chart-area" style="height:140px;position:relative;">
-        <svg class="svg-chart" id="svg-chart" viewBox="0 0 400 120" preserveAspectRatio="none">
-          <defs>
-            <linearGradient id="chartGrad" x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%" stop-color="var(--primary)" stop-opacity="0.3"/>
-              <stop offset="100%" stop-color="var(--primary)" stop-opacity="0"/>
-            </linearGradient>
-          </defs>
-          <path class="chart-area" id="chart-area-path"/>
-          <path class="chart-line" id="chart-line-path"/>
-        </svg>
-      </div>
-      <div class="chart-labels" id="chart-labels"></div>
+      <div id="peak-chart-area"></div>
     </div>
 
     <div class="section-title">Letzte Ladung</div>
@@ -373,6 +361,6 @@
   </div>
 </div>
 
-<script src="./script.js?v=1.11.0"></script>
+<script src="./script.js?v=1.13.0"></script>
 </body>
 </html>
