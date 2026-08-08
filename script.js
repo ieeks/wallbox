@@ -1026,13 +1026,120 @@ function initImport() {
   });
 }
 
+// =====================================================================
+// go-e CSV – zwei Export-Varianten
+//
+// A) App-Export ("EnergieReport.csv"): Komma-getrennt, Spalten "Maximale
+//    Leistung" / "Gesamtzeit" / "Ladezeit", Dauer als "17H 43min 18S" bzw.
+//    "1T 9H 59min 49S", und ein Header, der wegen eines gequoteten Feldes
+//    ("Zähler\ndifferenz") über ZWEI Zeilen geht.
+// B) data.v3.go-e.io: Semikolon-getrennt, jedes Feld in "…", Dezimalkomma,
+//    Spalten "max. Leistung [kW]" / "Dauer gesamt", Dauer als "HH:MM:SS".
+//
+// Ein zeilenweises split() reicht für keine der beiden: bei A zerreisst es den
+// Header, bei B bleiben die Quotes an den Werten kleben (parseFloat('"72.324"')
+// ist NaN) und am Spaltennamen ('"start"' !== 'start').
+// =====================================================================
+function parseCsv(text, delim) {
+  const rows = [];
+  let row = [], field = '', inQuotes = false;
+  const src = text.replace(/\r/g, '');
+  for(let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if(inQuotes) {
+      if(ch === '"') { if(src[i+1] === '"') { field += '"'; i++; } else inQuotes = false; }
+      else field += ch;
+    }
+    else if(ch === '"') inQuotes = true;
+    else if(ch === delim) { row.push(field); field = ''; }
+    else if(ch === '\n') { row.push(field); field = ''; if(row.some(f => f.trim() !== '')) rows.push(row); row = []; }
+    else field += ch;
+  }
+  row.push(field);
+  if(row.some(f => f.trim() !== '')) rows.push(row);
+  return rows;
+}
+
+// Trennzeichen raten: das Zeichen, das in der Kopfzeile die meisten Felder ergibt.
+function detectDelim(text) {
+  return [';', ',', '\t']
+    .map(d => ({ d, n: (parseCsv(text, d)[0] || []).length }))
+    .sort((a, b) => b.n - a.n)[0].d;
+}
+
+const normHeader = s => (s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+// Erste passende Spalte aus mehreren Namensvarianten.
+function findCol(cols, ...tests) {
+  for(const t of tests) { const i = cols.findIndex(t); if(i >= 0) return i; }
+  return -1;
+}
+
+// Dezimalkomma (data.v3) oder Dezimalpunkt (App-Export) – nie beides zugleich.
+function parseNum(raw) {
+  const s = (raw || '').trim();
+  if(!s) return NaN;
+  return parseFloat(s.includes(',') ? s.replace(/\./g, '').replace(',', '.') : s);
+}
+
+const secToDauer = sec =>
+  Math.floor(sec/3600) + ':' + String(Math.floor((sec%3600)/60)).padStart(2,'0') + ':' + String(sec%60).padStart(2,'0');
+
+// "HH:MM:SS" (auch >24h), "17H 43min 18S", "1T 9H 59min 49S", "47min 58S", "21S"
+function normDauer(raw) {
+  const s = (raw || '').trim();
+  if(!s) return null;
+  if(s.includes(':')) {
+    const p = s.split(':').map(Number);
+    if(p.some(isNaN)) return null;
+    const sec = p.length === 3 ? p[0]*3600 + p[1]*60 + p[2] : p.length === 2 ? p[0]*60 + p[1] : 0;
+    return sec > 0 ? secToDauer(sec) : null;
+  }
+  const m = s.match(/^(?:(\d+)\s*T)?\s*(?:(\d+)\s*H)?\s*(?:(\d+)\s*min)?\s*(?:(\d+)\s*S)?$/i);
+  if(!m) return null;
+  const sec = (+m[1]||0)*86400 + (+m[2]||0)*3600 + (+m[3]||0)*60 + (+m[4]||0);
+  return sec > 0 ? secToDauer(sec) : null;
+}
+
+// "06.08.2026 15:31:22" → { date:'2026-08-06', time:'15:31', ms }
+function goeDateTime(raw) {
+  const [d, t] = (raw || '').trim().split(' ');
+  const p = (d || '').split('.');
+  if(p.length !== 3) return null;
+  const year = p[2].length === 2 ? '20' + p[2] : p[2];
+  const date = `${year}-${p[1].padStart(2,'0')}-${p[0].padStart(2,'0')}`;
+  const time = t ? t.slice(0, 5) : '';
+  return { date, time, ms: Date.parse(`${date}T${time || '00:00'}:00`) };
+}
+
+// Zuordnung CSV-Zeile → bestehende Ladung.
+// Die Uhrzeit taugt nicht als Schlüssel: die CSV speichert den Steckbeginn, der
+// go-e-Auto-Import den Ladeschluss – und mehr als die Hälfte der Sessions endet
+// an einem anderen Kalendertag, als sie beginnt. Ein date-Vergleich (wie vorher)
+// legt deshalb Duplikate an, statt die Zeile als bekannt zu erkennen.
+// kWh ist der starke Schlüssel. Bei mehreren Kandidaten (77,089 vs 77,086 liegen
+// 0,003 auseinander) entscheidet die Nähe zum Ladeende – aber nur, wenn der
+// Zweitbeste eindeutig weit weg ist.
+function matchExistingCharge(kwh, endeMs) {
+  const cand = charges.filter(c => Math.abs((c.kwh ?? 0) - kwh) < 0.01);
+  if(cand.length === 0) return null;
+  const dist = c => Math.abs(Date.parse(`${c.date}T${c.time || '12:00'}:00`) - endeMs);
+  if(!isFinite(endeMs)) return cand.length === 1 ? cand[0] : null;
+  const sorted = cand.slice().sort((a,b) => dist(a) - dist(b));
+  if(dist(sorted[0]) > 48*3600*1000) return null;   // zu weit weg → echte neue Ladung
+  if(sorted[1] && dist(sorted[1]) <= 24*3600*1000) return null; // nicht eindeutig
+  return sorted[0];
+}
+
 let importPreview = []; // Temporary storage for CSV preview
+let importBackfill = []; // Bestehende Ladungen, die nur ergänzt werden
 
 function processFile(file) {
   const reader = new FileReader();
   reader.onload = e => {
     const text = e.target.result;
     importPreview = [];
+    importBackfill = [];
 
     if(file.name.endsWith('.json')) {
       try {
@@ -1060,42 +1167,55 @@ function processFile(file) {
       } catch(err) { showToast('Fehler beim Parsen der JSON-Datei'); return; }
     } else {
       const lines = text.trim().replace(/\r/g, '').split('\n');
-      const header = lines[0].toLowerCase();
-      const isGoE = header.includes('energie [kwh]') || header.includes('session number');
+      const csvRows = parseCsv(text, detectDelim(text));
+      const cols = (csvRows[0] || []).map(normHeader);
+      const iStart = findCol(cols, c => c === 'start');
+      const iEnde = findCol(cols, c => c === 'ende');
+      // "energie pv"/"energie akku" dürfen die Energiespalte nicht kapern.
+      const iKwh = findCol(cols,
+        c => c === 'energie [kwh]', c => c === 'energie',
+        c => c.startsWith('energie') && !c.includes('pv') && !c.includes('akku'));
+      const iMaxKw = findCol(cols, c => c.startsWith('max') && c.includes('leistung'));
+      const iDauer = findCol(cols, c => c.includes('dauer gesamt'), c => c === 'gesamtzeit');
+      const iDauerAktiv = findCol(cols, c => c.includes('dauer aktiver stromfluss'), c => c === 'ladezeit');
+      const isGoE = iStart >= 0 && iKwh >= 0;
+
+      // Nur bei eindeutigen go-e-Merkmalen abbrechen – eine generische CSV mit
+      // einer Spalte "energie" soll weiterhin im generischen Zweig landen.
+      if(!isGoE && /session (number|id|identifier)|energie \[kwh\]/.test(cols.join('|'))) {
+        showToast('go-e CSV erkannt, aber Spalten fehlen');
+        return;
+      }
 
       if(isGoE) {
-        const delim = lines[0].includes('\t') ? '\t' : ';';
-        const cols = lines[0].split(delim).map(c => c.trim().toLowerCase());
-        const iStart = cols.findIndex(c => c === 'start');
-        const iKwh = cols.findIndex(c => c.includes('energie'));
-        const iMaxKw = cols.findIndex(c => c.includes('max. leistung'));
-        const iDauer = cols.findIndex(c => c.includes('dauer gesamt'));
-        const iDauerAktiv = cols.findIndex(c => c.includes('dauer aktiver stromfluss'));
-
-        if(iStart === -1 || iKwh === -1) {
-          showToast('go-e CSV erkannt, aber Spalten fehlen');
-          return;
-        }
-
-        for(let i = 1; i < lines.length; i++) {
-          const parts = lines[i].split(delim);
+        for(let i = 1; i < csvRows.length; i++) {
+          const parts = csvRows[i];
           if(parts.length < Math.max(iStart, iKwh) + 1) continue;
-          const startRaw = parts[iStart].trim();
-          if(!startRaw) continue;
-          const startParts = startRaw.split(' ');
-          const dateParts = startParts[0].split('.');
-          if(dateParts.length !== 3) continue;
-          const yearRaw = dateParts[2];
-          const year = yearRaw.length === 2 ? '20' + yearRaw : yearRaw;
-          const date = `${year}-${dateParts[1].padStart(2,'0')}-${dateParts[0].padStart(2,'0')}`;
-          const time = startParts[1] ? startParts[1].slice(0, 5) : '';
-          const kwh = parseFloat(parts[iKwh].trim().replace(',','.'));
+          const start = goeDateTime(parts[iStart]);
+          if(!start) continue;
+          const date = start.date;
+          const time = start.time;
+          const kwh = parseNum(parts[iKwh]);
           if(isNaN(kwh) || kwh <= 0) continue;
-          const exists = charges.some(c => c.date === date && Math.abs(c.kwh - kwh) < 0.01);
-          if(exists) continue;
-          const maxKw = iMaxKw >= 0 ? parseFloat(parts[iMaxKw].trim().replace(',','.')) : null;
-          const dauerGesamt = iDauer >= 0 ? parts[iDauer].trim() : null;
-          const dauer = iDauerAktiv >= 0 ? parts[iDauerAktiv].trim() : null;
+          const maxKwRaw = iMaxKw >= 0 ? parseNum(parts[iMaxKw]) : NaN;
+          const maxKw = isFinite(maxKwRaw) && maxKwRaw > 0 ? maxKwRaw : null;
+          const dauerGesamt = iDauer >= 0 ? normDauer(parts[iDauer]) : null;
+          const dauer = iDauerAktiv >= 0 ? normDauer(parts[iDauerAktiv]) : null;
+
+          // Bereits bekannte Session → nicht neu anlegen, sondern fehlende
+          // Felder ergänzen. Bestehende Werte werden nie überschrieben.
+          const ende = iEnde >= 0 ? goeDateTime(parts[iEnde]) : null;
+          const existing = matchExistingCharge(kwh, ende ? ende.ms : NaN);
+          if(existing) {
+            const patch = {};
+            if(maxKw !== null && !(existing.maxKw > 0)) patch.maxKw = maxKw;
+            if(dauerGesamt && !existing.dauerGesamt) patch.dauerGesamt = dauerGesamt;
+            if(dauer && !existing.dauer) patch.dauer = dauer;
+            if(Object.keys(patch).length) {
+              importBackfill.push({ id: existing.id, date: existing.date, kwh: existing.kwh, patch });
+            }
+            continue;
+          }
           // CSV-Start = Steckbeginn → SNAP-Mittelpunkt ab Start vorwärts berechnen
           const snap = isSnap(date, time, dauerToMs(dauer), 'start');
           const ep = energyPriceFor(date);
@@ -1148,7 +1268,7 @@ function processFile(file) {
 
 function showImportPreview() {
   const area = document.getElementById('import-result');
-  if(importPreview.length === 0) {
+  if(importPreview.length === 0 && importBackfill.length === 0) {
     area.innerHTML = `<div class="import-preview"><div style="text-align:center;color:var(--text-secondary);padding:12px;">Keine neuen Einträge gefunden (evtl. bereits importiert).</div></div>`;
     return;
   }
@@ -1157,12 +1277,15 @@ function showImportPreview() {
   const totalEur = importPreview.reduce((s,c) => s + c.total, 0);
   const show = importPreview.slice(0, 5);
   const more = importPreview.length - show.length;
+  const bfShow = importBackfill.slice(0, 5);
+  const bfMore = importBackfill.length - bfShow.length;
+  const fieldLabel = { maxKw: 'max. Leistung', dauerGesamt: 'Steckdauer', dauer: 'Ladezeit' };
 
   area.innerHTML = `
     <div class="import-preview">
       <div class="ip-header">
         <span class="ip-title">Vorschau</span>
-        <span class="ip-count">${importPreview.length} Ladung${importPreview.length !== 1 ? 'en' : ''} erkannt</span>
+        <span class="ip-count">${importPreview.length} neu${importBackfill.length ? ` • ${importBackfill.length} ergänzt` : ''}</span>
       </div>
       ${show.map(c => `
         <div class="ip-entry">
@@ -1171,6 +1294,19 @@ function showImportPreview() {
         </div>
       `).join('')}
       ${more > 0 ? `<div class="ip-more">+ ${more} weitere Einträge</div>` : ''}
+      ${importBackfill.length ? `
+        <div class="ip-header" style="margin-top:10px;">
+          <span class="ip-title">Bestehende Ladungen ergänzen</span>
+        </div>
+        ${bfShow.map(b => `
+          <div class="ip-entry">
+            <span class="ip-date">${fmtDate(b.date)}</span>
+            <span class="ip-kwh">${Object.entries(b.patch).map(([k,v]) =>
+              `${fieldLabel[k] || k}: ${k === 'maxKw' ? fmt(v,2) + ' kW' : v}`).join(' • ')}</span>
+          </div>
+        `).join('')}
+        ${bfMore > 0 ? `<div class="ip-more">+ ${bfMore} weitere Ergänzungen</div>` : ''}
+      ` : ''}
       <div class="ip-summary">
         <div><div class="ip-stat-val">${fmt(totalKwh,1)}</div><div class="ip-stat-label">kWh</div></div>
         <div><div class="ip-stat-val">${fmt(totalEur)}</div><div class="ip-stat-label">Euro</div></div>
@@ -1189,17 +1325,29 @@ function confirmImport() {
   const totalKwh = importPreview.reduce((s,c) => s + c.kwh, 0);
   const totalEur = importPreview.reduce((s,c) => s + c.total, 0);
 
+  // Ergänzungen an bestehenden Einträgen: nur die Felder aus patch, nichts sonst.
+  let patched = 0;
+  importBackfill.forEach(b => {
+    const c = charges.find(x => x.id === b.id);
+    if(c) { Object.assign(c, b.patch); patched++; }
+  });
+
   charges.push(...importPreview);
   charges.sort((a,b) => b.date.localeCompare(a.date));
   persist();
 
   importPreview = [];
+  importBackfill = [];
   document.getElementById('import-result').innerHTML = '';
-  showToast(`+${count} Ladungen • ${fmt(totalKwh,1)} kWh • ${fmt(totalEur)} €`);
+  const parts = [];
+  if(count) parts.push(`+${count} Ladungen • ${fmt(totalKwh,1)} kWh • ${fmt(totalEur)} €`);
+  if(patched) parts.push(`${patched} ergänzt`);
+  showToast(parts.join(' • ') || 'Nichts zu importieren');
 }
 
 function cancelImport() {
   importPreview = [];
+  importBackfill = [];
   document.getElementById('import-result').innerHTML = '';
   showToast('Import abgebrochen');
 }

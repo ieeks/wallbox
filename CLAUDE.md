@@ -18,7 +18,7 @@ sehen Nutzer nach einem Deploy noch die alte Version.
 
 ---
 
-## Aktuelle Version: 1.10.2
+## Aktuelle Version: 1.11.0
 
 ---
 
@@ -54,12 +54,79 @@ bei jedem Start eine zweite echte Ladung desselben Tages und schreibt das in die
 - `dauer` = aktive Ladezeit aus `cdi` (ms → H:MM:SS)
 - `dauerGesamt` = null (nicht über API verfügbar)
 - `source` = `'go-e-auto'`
-- `maxKw` aus `nrg[11]` (W → kW)
+- `maxKw` aus dem **Peak-Tracker**, nicht aus `nrg[11]` zum Importzeitpunkt
+
+**Peak-Tracker (`maxKw`):** `nrg[11]` ist die *momentane* Leistung. Der Import läuft aber
+erst bei `car === 1` (abgesteckt) – dort fliesst nichts mehr und der Wert ist immer 0.
+Deshalb wird bei `car === 2` (lädt) jeder Lauf `nrg[11]` mitgeschrieben und das Maximum
+gehalten; beim Import wird es via `consumePeak()` übernommen und der Tracker geleert.
+
+- State liegt in **eigenem Dokument** `haushalte/goe-peak-tracker`. Nicht als Feld in
+  `haushalte/haushalt`: `syncToCloud()` schreibt mit `.set()` **ohne** `{merge:true}` und
+  würde jedes der App unbekannte Feld beim nächsten Nutzer-Sync löschen.
+- Session-Reset erkannt über `wh` (fällt = neue Session) und `rbt` (fällt = Reboot).
+- `consumePeak()` läuft **vor** allen Abbruchpfaden (`wh < 10`, Duplikat-Checks), damit ein
+  Peak nicht in die nächste Session überläuft.
+- Ohne Tracking-Daten bleibt `maxKw` **`null`** – kein Fallback auf `nrg[11]`, denn 0 ist
+  kein Maximum. Die 15 Einträge vor v1.10.3 haben deshalb `maxKw: 0` (nicht rückwirkend
+  reparierbar, die API liefert keine Historie).
+- Es ist ein **abgetastetes** Maximum (15-min-Raster): eine kurze Spitze zwischen zwei
+  Läufen wird nicht gesehen. Für „hängt die Wallbox dauerhaft nahe 11 kW?" reicht das,
+  weil die Ladeleistung über weite Teile der Session konstant ist.
+- Relevanz: ab 1.1.2027 bestimmt das höchste 15-min-Mittel des Monats den Leistungspreis
+  auf Netzebene 7 (SNE-G-V). `maxKw` ist die Datenbasis dafür.
 
 **GitHub Secrets (Settings → Secrets → Actions):**
 - `GOE_SERIAL` — 6-stellige Seriennummer
 - `GOE_TOKEN` — Bearer Token aus go-e Cloud
 - `FIREBASE_SERVICE_ACCOUNT` — vollständiger Service-Account-JSON
+
+---
+
+## go-e CSV-Import (`processFile`, ab v1.11.0)
+
+**Zwei Export-Varianten, beide müssen laufen:**
+
+| | App-Export (`EnergieReport.csv`) | data.v3.go-e.io |
+|---|---|---|
+| Trennzeichen | Komma | Semikolon |
+| Quoting | nur mehrzeiliges Header-Feld | **jedes** Feld |
+| Dezimaltrenner | Punkt | Komma |
+| Leistung | `Maximale Leistung` | `max. Leistung [kW]` |
+| Dauer | `Gesamtzeit` / `Ladezeit` | `Dauer gesamt` / `Dauer aktiver Stromfluss` |
+| Dauer-Format | `17H 43min 18S`, `1T 9H 59min 49S` | `HH:MM:SS` (auch `33:59:49`) |
+
+Ein zeilenweises `split('\n')` reicht für **keine** der beiden: beim App-Export
+zerreisst es den Header (das Feld `"Zähler\ndifferenz"` enthält ein Newline), bei
+data.v3 bleiben die Quotes an Werten (`parseFloat('"72.324"')` → NaN) und an
+Spaltennamen (`'"start"' !== 'start'`). Deshalb `parseCsv()` als echter Tokenizer
++ `detectDelim()` (das Zeichen, das in der Kopfzeile die meisten Felder ergibt).
+
+- `normDauer()` normalisiert beide Dauer-Formate auf `H:MM:SS` (Eingabe für `dauerToMs`).
+- `parseNum()`: Dezimalkomma **oder** -punkt, nie beides in derselben Datei.
+- Spaltensuche über `findCol()` mit Alias-Liste. `energie pv`/`energie akku` sind
+  explizit ausgeschlossen, sonst kapern sie die Energiespalte.
+- `isGoE` ergibt sich daraus, ob `start` **und** die Energiespalte gefunden wurden –
+  nicht mehr aus einem Header-Substring. Abgebrochen wird nur bei eindeutigen
+  go-e-Merkmalen, damit generische CSVs mit einer Spalte `energie` weiter durchlaufen.
+
+**Backfill statt Überspringen:** Erkannte Duplikate werden nicht mehr verworfen,
+sondern ergänzen fehlende Felder (`maxKw`, `dauerGesamt`, `dauer`) am bestehenden
+Eintrag. Bestehende Werte werden **nie** überschrieben; `kwh`, `total`,
+`energyPrice`, `snap`, `lch`, `date`, `time` bleiben unangetastet. Landet in
+`importBackfill[]`, wird in der Vorschau separat angezeigt und erst in
+`confirmImport()` per `Object.assign` angewandt.
+
+**`matchExistingCharge(kwh, endeMs)`** – die Zuordnung ist der heikle Teil:
+- Die Uhrzeit taugt **nicht** als Schlüssel: CSV = Steckbeginn, Auto-Import = Ladeschluss.
+- Das Datum auch nicht: mehr als die Hälfte der Sessions endet an einem anderen
+  Kalendertag, als sie beginnt. Der frühere `c.date === date`-Check legt deshalb
+  Duplikate an, statt die Zeile als bekannt zu erkennen.
+- Schlüssel ist `kwh` (±0,01). Bei mehreren Kandidaten (`77,089` vs `77,086`
+  liegen 0,003 auseinander) entscheidet die Nähe zum Ladeende – aber nur, wenn
+  der Zweitbeste > 24 h entfernt ist, sonst kein Match.
+- Der beste Kandidat muss innerhalb von 48 h zum CSV-Ende liegen, sonst gilt die
+  Zeile als echte neue Ladung (gleiche kWh-Menge Monate später).
 
 ---
 
