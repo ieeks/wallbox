@@ -18,7 +18,7 @@ sehen Nutzer nach einem Deploy noch die alte Version.
 
 ---
 
-## Aktuelle Version: 1.10.2
+## Aktuelle Version: 1.10.3
 
 ---
 
@@ -54,7 +54,27 @@ bei jedem Start eine zweite echte Ladung desselben Tages und schreibt das in die
 - `dauer` = aktive Ladezeit aus `cdi` (ms → H:MM:SS)
 - `dauerGesamt` = null (nicht über API verfügbar)
 - `source` = `'go-e-auto'`
-- `maxKw` aus `nrg[11]` (W → kW)
+- `maxKw` aus dem **Peak-Tracker**, nicht aus `nrg[11]` zum Importzeitpunkt
+
+**Peak-Tracker (`maxKw`):** `nrg[11]` ist die *momentane* Leistung. Der Import läuft aber
+erst bei `car === 1` (abgesteckt) – dort fliesst nichts mehr und der Wert ist immer 0.
+Deshalb wird bei `car === 2` (lädt) jeder Lauf `nrg[11]` mitgeschrieben und das Maximum
+gehalten; beim Import wird es via `consumePeak()` übernommen und der Tracker geleert.
+
+- State liegt in **eigenem Dokument** `haushalte/goe-peak-tracker`. Nicht als Feld in
+  `haushalte/haushalt`: `syncToCloud()` schreibt mit `.set()` **ohne** `{merge:true}` und
+  würde jedes der App unbekannte Feld beim nächsten Nutzer-Sync löschen.
+- Session-Reset erkannt über `wh` (fällt = neue Session) und `rbt` (fällt = Reboot).
+- `consumePeak()` läuft **vor** allen Abbruchpfaden (`wh < 10`, Duplikat-Checks), damit ein
+  Peak nicht in die nächste Session überläuft.
+- Ohne Tracking-Daten bleibt `maxKw` **`null`** – kein Fallback auf `nrg[11]`, denn 0 ist
+  kein Maximum. Die 15 Einträge vor v1.10.3 haben deshalb `maxKw: 0` (nicht rückwirkend
+  reparierbar, die API liefert keine Historie).
+- Es ist ein **abgetastetes** Maximum (15-min-Raster): eine kurze Spitze zwischen zwei
+  Läufen wird nicht gesehen. Für „hängt die Wallbox dauerhaft nahe 11 kW?" reicht das,
+  weil die Ladeleistung über weite Teile der Session konstant ist.
+- Relevanz: ab 1.1.2027 bestimmt das höchste 15-min-Mittel des Monats den Leistungspreis
+  auf Netzebene 7 (SNE-G-V). `maxKw` ist die Datenbasis dafür.
 
 **GitHub Secrets (Settings → Secrets → Actions):**
 - `GOE_SERIAL` — 6-stellige Seriennummer

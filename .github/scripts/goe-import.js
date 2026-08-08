@@ -64,6 +64,63 @@ admin.initializeApp({
 const db = admin.firestore();
 const docRef = db.collection('haushalte').doc('haushalt');
 
+// Peak-Tracker bewusst als EIGENES Dokument, nicht als Feld in 'haushalt':
+// syncToCloud() in script.js schreibt mit .set() ohne {merge:true} und würde
+// jedes Feld, das die App nicht kennt, beim nächsten Nutzer-Sync löschen.
+const peakRef = db.collection('haushalte').doc('goe-peak-tracker');
+
+// =====================================================================
+// PEAK-TRACKER
+// Der Workflow pollt alle 15 min – also im selben Raster, in dem ab 2027 auch
+// die Verrechnungsleistung ermittelt wird. Der so gewonnene Wert ist ein
+// ABGETASTETES Maximum: eine kurze Spitze zwischen zwei Läufen wird nicht
+// gesehen. Für die Frage „hängt die Wallbox dauerhaft nahe 11 kW?" reicht das,
+// weil die Ladeleistung über weite Teile der Session konstant ist.
+// =====================================================================
+async function trackPeak(powerW, wh, rbt) {
+  if (typeof powerW !== 'number') {
+    console.log('nrg[11] nicht verfügbar – Peak-Tracking übersprungen.');
+    return;
+  }
+  let prev = null;
+  try {
+    const snap = await peakRef.get();
+    prev = snap.exists ? snap.data() : null;
+  } catch (e) {
+    console.log(`Peak-Tracker nicht lesbar (${e.message}) – starte neu.`);
+  }
+
+  // Neue Session erkennen: wh zählt pro Session hoch, ein Rückgang bedeutet
+  // Reset. rbt kleiner als zuvor = Wallbox-Reboot.
+  const isNewSession = !prev
+    || (typeof prev.wh === 'number' && wh < prev.wh)
+    || (rbt !== null && typeof prev.rbt === 'number' && rbt < prev.rbt);
+
+  const maxW = isNewSession ? powerW : Math.max(prev.maxW ?? 0, powerW);
+  const samples = isNewSession ? 1 : (prev.samples ?? 0) + 1;
+
+  await peakRef.set({ maxW, samples, wh, rbt, updatedAt: new Date().toISOString() });
+  console.log(
+    `Peak-Tracking: P=${powerW}W | max=${maxW}W (${(maxW / 1000).toFixed(2)} kW) | ` +
+    `samples=${samples}${isNewSession ? ' | neue Session' : ''}`
+  );
+}
+
+// Liest den Peak und löscht den Tracker, damit er nicht in die nächste Session
+// überläuft – auch dann, wenn der Import danach als Duplikat abbricht.
+async function consumePeak() {
+  try {
+    const snap = await peakRef.get();
+    if (!snap.exists) return null;
+    const data = snap.data();
+    await peakRef.delete();
+    return data;
+  } catch (e) {
+    console.log(`Peak-Tracker nicht lesbar (${e.message}) – maxKw bleibt leer.`);
+    return null;
+  }
+}
+
 // =====================================================================
 // MAIN
 // =====================================================================
@@ -90,13 +147,26 @@ async function run() {
   const lch   = status.lch   ?? null; // ms seit Boot – Session-ID
   const rbt   = status.rbt   ?? null; // ms seit Boot (aktuell)
   const lccfc = status.lccfc ?? null; // ms seit Boot: lastCarStateChangedFromCharging
-  console.log(`car=${car} | wh=${wh} | lch=${lch} | rbt=${rbt} | lccfc=${lccfc}`);
+  const powerW = typeof status.nrg?.[11] === 'number' ? status.nrg[11] : null; // momentane Gesamtleistung
+  console.log(`car=${car} | wh=${wh} | lch=${lch} | rbt=${rbt} | lccfc=${lccfc} | P=${powerW}W`);
+
+  // 2b. Peak-Tracking während der Ladung (car==2).
+  // nrg[11] ist die MOMENTANE Leistung, kein Session-Maximum. Beim Import selbst
+  // (car==1, abgesteckt) fliesst nichts mehr – dort ist der Wert immer 0. Der Peak
+  // muss deshalb laufend mitgeschrieben werden, solange tatsächlich geladen wird.
+  if (car === 2) {
+    await trackPeak(powerW, wh, rbt);
+    return;
+  }
 
   // 3. Neue Session erkennen: car==1 (idle/abgesteckt) + wh > 0 + lch neu
   if (car !== 1) {
-    console.log(`car=${car} – Auto lädt noch oder nicht verbunden, nichts zu tun.`);
+    console.log(`car=${car} – Auto verbunden, lädt aber nicht (Peak bleibt erhalten).`);
     return;
   }
+
+  // Peak sofort einlesen und Tracker leeren – vor allen weiteren Abbruchpfaden.
+  const peak = await consumePeak();
 
   if (wh < 10) {
     console.log(`wh=${wh} zu gering – ignoriert.`);
@@ -169,7 +239,13 @@ async function run() {
   const dauer = dauerMs > 0
     ? (h + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0'))
     : null;
-  const maxKw  = typeof status.nrg?.[11] === 'number' ? status.nrg[11] / 1000 : null;
+  // maxKw aus dem Peak-Tracker. Kein Fallback auf nrg[11]: hier ist car==1, es
+  // fliesst nichts mehr, der Wert wäre immer 0 – und 0 ist kein Maximum, sondern
+  // eine Lüge. Ohne Tracking-Daten bleibt das Feld leer.
+  const maxKw = (peak && typeof peak.maxW === 'number' && peak.maxW > 0)
+    ? Math.round(peak.maxW / 10) / 100
+    : null;
+  console.log(`maxKw=${maxKw ?? '—'} (aus ${peak?.samples ?? 0} Messpunkten)`);
 
   const entry = {
     id:           Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
