@@ -18,7 +18,7 @@ sehen Nutzer nach einem Deploy noch die alte Version.
 
 ---
 
-## Aktuelle Version: 1.12.0
+## Aktuelle Version: 1.13.0
 
 ---
 
@@ -144,6 +144,31 @@ kWh, `maxKw`, Kosten) plus eine Fusszeile mit der höchsten Ladeleistung des Mon
 - Der Monats-Peak ist das Maximum über `c.maxKw > 0`; Einträge ohne Wert zeigen `—`
   und werden nicht als 0 gewertet.
 - Die Zeile ist per `role="button"` + `tabindex` + Enter/Space auch ohne Maus bedienbar.
+
+---
+
+## Monats-Peak-Diagramm (`renderPeakChart`, ab v1.13.0)
+
+Ersetzt das frühere Linien-Chart „Kosten / Tag" (`renderChart`). Das war aus drei
+Gründen nicht zu retten:
+1. Die X-Achse war der **Index** des Punkts (`x = i/(n-1)`), keine Zeitachse.
+   Ladeabstände von 1 bis 16 Tagen wurden gleich breit gezeichnet.
+2. „Kosten pro Ladetag" misst faktisch, wie leer der Akku war – kein Trend, den
+   man beeinflussen könnte.
+3. Das Label sagte „Kosten / Tag", der Badge daneben zeigte die **Summe**.
+
+Stattdessen: Balken je Monat mit dem höchsten `maxKw`, dazu eine gestrichelte
+Linie bei `PEAK_THRESHOLD_KW = 10` (Staffelgrenze der SNE-G-V auf Netzebene 7).
+Balken darüber rot, darunter grün. Badge zählt die Monate über der Schwelle.
+
+- Monate ohne jeden `maxKw`-Wert zeigen `—` und einen Stummel-Balken – **nicht** 0.
+  Ein Peak von 0 wäre eine Falschaussage, kein fehlender Wert.
+- Monate mit teilweise fehlenden Werten bekommen ein `*` am Wert plus Fussnote.
+- Skala geht immer bis mindestens 11 kW, damit die 10-kW-Linie nicht am Rand klebt.
+- Die Schwellenlinie endet 34 px vor dem rechten Rand; dort sitzt ihre Beschriftung,
+  sonst streicht die Linie durch den Text. Linie liegt per `z-index` **über** den
+  Balken – nur so ist „drüber oder drunter" sofort ablesbar.
+- Farbtoken `--red` / `--red-dim` wurden dafür in beide Themes ergänzt (gab es vorher nicht).
 
 ---
 

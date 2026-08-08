@@ -759,7 +759,7 @@ function refreshDashboard() {
   }
 
   // Chart
-  renderChart(filtered);
+  renderPeakChart(filtered);
   renderInsights();
   renderSavings();
   renderAmortisation();
@@ -955,54 +955,87 @@ function setPeriod(p, btn) {
 // =====================================================================
 // CHART
 // =====================================================================
-function renderChart(data) {
-  if(data.length === 0) {
-    document.getElementById('chart-line-path').setAttribute('d','');
-    document.getElementById('chart-area-path').setAttribute('d','');
-    document.getElementById('chart-labels').innerHTML = '<span>Keine Daten</span>';
-    document.getElementById('chart-badge').textContent = '';
+// Schwelle der SNE-G-V auf Netzebene 7: bis hier gilt der niedrigere
+// Leistungspreis, darüber der höhere.
+const PEAK_THRESHOLD_KW = 10;
+
+function renderPeakChart(data) {
+  const area = document.getElementById('peak-chart-area');
+  const badge = document.getElementById('peak-badge');
+  if(!area) return;
+
+  // Peak je Monat = höchstes maxKw. Einträge ohne Wert (alte go-e-Auto-Importe
+  // vor dem Peak-Tracker) zählen NICHT als 0 – sonst behauptet das Diagramm,
+  // in dem Monat sei kaum Leistung geflossen.
+  const byMonth = {};
+  data.forEach(c => {
+    const key = c.date.slice(0, 7);
+    if(!byMonth[key]) byMonth[key] = { peak: 0, known: 0, total: 0 };
+    byMonth[key].total++;
+    if(c.maxKw > 0) {
+      byMonth[key].known++;
+      if(c.maxKw > byMonth[key].peak) byMonth[key].peak = c.maxKw;
+    }
+  });
+
+  const keys = Object.keys(byMonth).sort();
+  if(keys.length === 0) {
+    area.innerHTML = '<div class="pc-empty">Keine Daten</div>';
+    if(badge) badge.textContent = '';
     return;
   }
 
-  // Aggregate by date
-  const byDate = {};
-  data.forEach(c => { byDate[c.date] = (byDate[c.date]||0) + c.total; });
-  const dates = Object.keys(byDate).sort();
-  const values = dates.map(d => byDate[d]);
-
-  const w = 400, h = 120, pad = 4;
-  const maxV = Math.max(...values, 1);
-  const minV = Math.min(...values, 0);
-  const range = maxV - minV || 1;
-
-  const points = values.map((v,i) => {
-    const x = pad + (i / Math.max(values.length-1,1)) * (w - pad*2);
-    const y = h - pad - ((v - minV) / range) * (h - pad*2);
-    return [x, y];
-  });
-
-  // Line
-  let d = 'M ' + points.map(p => p[0]+' '+p[1]).join(' L ');
-  document.getElementById('chart-line-path').setAttribute('d', d);
-
-  // Area
-  let areaD = d + ` L ${points[points.length-1][0]} ${h} L ${points[0][0]} ${h} Z`;
-  document.getElementById('chart-area-path').setAttribute('d', areaD);
-
-  // Labels
-  const labelsEl = document.getElementById('chart-labels');
-  if(dates.length <= 6) {
-    labelsEl.innerHTML = dates.map(d => `<span>${fmtDateShort(d)}</span>`).join('');
-  } else {
-    const first = fmtDateShort(dates[0]);
-    const last = fmtDateShort(dates[dates.length-1]);
-    labelsEl.innerHTML = `<span>${first}</span><span>${last}</span>`;
+  const peaks = keys.map(k => byMonth[k].peak).filter(v => v > 0);
+  if(peaks.length === 0) {
+    area.innerHTML = '<div class="pc-empty">Noch keine Leistungswerte – CSV importieren oder auf die nächste Ladung warten</div>';
+    if(badge) badge.textContent = '';
+    return;
   }
 
-  // Badge
-  const badge = document.getElementById('chart-badge');
-  const totalFiltered = values.reduce((a,b)=>a+b,0);
-  badge.textContent = fmt(totalFiltered) + ' €';
+  // Skala immer bis mindestens 11 kW, damit die 10-kW-Linie nicht am Rand klebt.
+  const scaleMax = Math.max(11, Math.ceil(Math.max(...peaks)));
+  const pct = v => (v / scaleMax) * 100;
+
+  const bars = keys.map(k => {
+    const m = byMonth[k];
+    const h = pct(m.peak);
+    const over = m.peak > PEAK_THRESHOLD_KW;
+    const partial = m.known < m.total;
+    const label = new Date(parseInt(k.slice(0,4)), parseInt(k.slice(5,7)) - 1, 1)
+      .toLocaleDateString('de-AT', { month: 'short' });
+    if(m.peak === 0) {
+      return `<div class="pc-col"><span class="pc-val pc-val-none">—</span>
+        <div class="pc-bar pc-bar-none"></div><span class="pc-label">${label}</span></div>`;
+    }
+    return `
+      <div class="pc-col">
+        <span class="pc-val${over ? ' is-over' : ''}" style="bottom:calc(${h}% + 4px)">${fmt(m.peak, 2)}${partial ? '*' : ''}</span>
+        <div class="pc-bar${over ? ' is-over' : ''}" style="height:${h}%"></div>
+        <span class="pc-label">${label}</span>
+      </div>`;
+  }).join('');
+
+  const anyPartial = keys.some(k => byMonth[k].known > 0 && byMonth[k].known < byMonth[k].total);
+
+  area.innerHTML = `
+    <div class="peak-chart">
+      <div class="pc-plot">
+        <div class="pc-threshold" style="bottom:${pct(PEAK_THRESHOLD_KW)}%">
+          <span class="pc-threshold-tag">${PEAK_THRESHOLD_KW} kW</span>
+        </div>
+        <div class="pc-bars">${bars}</div>
+      </div>
+    </div>
+    ${anyPartial ? '<div class="pc-note">* nicht alle Ladungen des Monats haben einen Leistungswert</div>' : ''}`;
+
+  const overCount = keys.filter(k => byMonth[k].peak > PEAK_THRESHOLD_KW).length;
+  const withData = keys.filter(k => byMonth[k].peak > 0).length;
+  if(badge) {
+    badge.textContent = overCount > 0
+      ? `${overCount}/${withData} Monate über ${PEAK_THRESHOLD_KW} kW`
+      : `alle unter ${PEAK_THRESHOLD_KW} kW`;
+    badge.classList.toggle('badge-warn', overCount > 0);
+  }
 }
 
 // =====================================================================

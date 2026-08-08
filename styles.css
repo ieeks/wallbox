@@ -12,6 +12,8 @@
   --primary-dim: rgba(193,95,60,0.12);
   --green: #34d058;
   --green-dim: rgba(52,208,88,0.12);
+  --red: #c0392b;
+  --red-dim: rgba(192,57,43,0.12);
   --blue: #58a6ff;
   --amber: #f0b429;
   --radius: 16px;
@@ -38,6 +40,8 @@ html[data-theme="dark"] {
   --text-muted: #555;
   --primary: #F59E0B;
   --primary-dim: rgba(193,95,60,0.16);
+  --red: #ef4444;
+  --red-dim: rgba(239,68,68,0.16);
   --header-bg: rgba(13,13,13,0.85);
   --nav-bg: rgba(22,22,22,0.85);
   --modal-scrim: rgba(0,0,0,0.72);
@@ -148,9 +152,47 @@ main { padding: 0 20px; max-width: 480px; margin: 0 auto; }
   font-size:11px; font-weight:600; padding:4px 10px;
   border-radius:20px; background:var(--green-dim); color:var(--green);
 }
-.chart-canvas { width:100%; height:140px; }
-.chart-labels { display:flex; justify-content:space-between; margin-top:8px; }
-.chart-labels span { font-size:10px; color:var(--text-muted); }
+.chart-header .badge.badge-warn { background: var(--red-dim); color: var(--red); }
+
+/* === MONATS-PEAK (Leistungspreis ab 2027) === */
+.pc-empty { font-size:12px; color:var(--text-muted); text-align:center; padding:24px 0; }
+.pc-plot { position:relative; height:130px; }
+.pc-threshold {
+  position:absolute; left:0; right:34px; z-index:2;
+  border-top:1px dashed var(--text-muted);
+  opacity:.7; pointer-events:none;
+}
+/* Marke liegt im reservierten Streifen rechts, damit sie weder einen Balken
+   noch dessen Wert überdeckt. */
+.pc-threshold-tag {
+  position:absolute; right:-32px; top:-6px;
+  font-size:9px; color:var(--text-muted);
+}
+.pc-bars {
+  display:flex; align-items:flex-end; gap:6px; height:100%;
+  padding-right:34px; position:relative; z-index:1;
+}
+.pc-col { flex:1; position:relative; height:100%; min-width:0; }
+.pc-bar {
+  position:absolute; bottom:0; left:0; right:0;
+  background:var(--green); border-radius:3px 3px 0 0;
+  transition:height .25s ease;
+}
+.pc-bar.is-over { background:var(--red); }
+.pc-bar-none { height:3px; background:var(--border); }
+.pc-val {
+  position:absolute; left:0; right:0; text-align:center;
+  font-size:10px; font-weight:600; font-variant-numeric:tabular-nums;
+  color:var(--text-secondary); white-space:nowrap;
+}
+.pc-val.is-over { color:var(--red); }
+.pc-val-none { bottom:7px; color:var(--text-muted); font-weight:400; }
+.pc-label {
+  position:absolute; bottom:-16px; left:0; right:0; text-align:center;
+  font-size:10px; color:var(--text-muted);
+}
+.pc-note { font-size:10px; color:var(--text-muted); margin-top:24px; }
+.peak-chart { padding-bottom:18px; }
 
 /* Last charge card */
 .last-charge {
@@ -533,11 +575,6 @@ nav {
 .nav-item.active { color:var(--primary); }
 .nav-item.active .material-symbols-outlined { font-variation-settings: 'FILL' 1, 'wght' 400; }
 
-/* SVG chart */
-.svg-chart { width:100%; overflow:visible; }
-.chart-line { fill:none; stroke:var(--primary); stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
-.chart-area { fill:url(#chartGrad); }
-.chart-dot { fill:var(--primary); }
 
 /* Login screen */
 .login-screen {
