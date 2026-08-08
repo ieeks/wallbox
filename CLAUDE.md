@@ -18,7 +18,7 @@ sehen Nutzer nach einem Deploy noch die alte Version.
 
 ---
 
-## Aktuelle Version: 1.11.0
+## Aktuelle Version: 1.12.0
 
 ---
 
@@ -127,6 +127,23 @@ Eintrag. Bestehende Werte werden **nie** überschrieben; `kwh`, `total`,
   der Zweitbeste > 24 h entfernt ist, sonst kein Match.
 - Der beste Kandidat muss innerhalb von 48 h zum CSV-Ende liegen, sonst gilt die
   Zeile als echte neue Ladung (gleiche kWh-Menge Monate später).
+
+---
+
+## Monatsverlauf – aufklappbare Monate (`renderMonthStats`, ab v1.12.0)
+
+Klick auf eine Monatszeile blendet die Einzelladungen darunter ein (Datum · Uhrzeit,
+kWh, `maxKw`, Kosten) plus eine Fusszeile mit der höchsten Ladeleistung des Monats.
+
+- Zustand in der Modul-Variable `expandedMonths` (Set von `'YYYY-MM'`), damit ein
+  Neu-Rendern durch `persist()`/`refreshDashboard()` die offenen Monate nicht zuklappt.
+  Bewusst **nicht** in `settings` – das würde über `syncToCloud()` in der Cloud landen.
+- Mehrere Monate gleichzeitig offen sind erlaubt.
+- `toggleMonthDetail(key)` ruft `renderMonthStats()` direkt auf, nicht `refreshDashboard()` –
+  der Rest des Dashboards ändert sich beim Aufklappen nicht.
+- Der Monats-Peak ist das Maximum über `c.maxKw > 0`; Einträge ohne Wert zeigen `—`
+  und werden nicht als 0 gewertet.
+- Die Zeile ist per `role="button"` + `tabindex` + Enter/Space auch ohne Maus bedienbar.
 
 ---
 

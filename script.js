@@ -1879,6 +1879,16 @@ function saveEdit() {
 // =====================================================================
 // MONTHLY STATS
 // =====================================================================
+// Aufgeklappte Monate im Monatsverlauf ('YYYY-MM'). Modul-Variable, damit der
+// Zustand ein Neu-Rendern (persist/render) überlebt.
+let expandedMonths = new Set();
+
+function toggleMonthDetail(key) {
+  if (expandedMonths.has(key)) expandedMonths.delete(key);
+  else expandedMonths.add(key);
+  renderMonthStats();
+}
+
 function renderMonthStats() {
   const area = document.getElementById('month-stats-area');
   if (!area) return;
@@ -1894,11 +1904,12 @@ function renderMonthStats() {
   const byMonth = {};
   data.forEach(c => {
     const key = c.date.slice(0, 7);
-    if (!byMonth[key]) byMonth[key] = { count: 0, kwh: 0, cost: 0, snapCount: 0 };
+    if (!byMonth[key]) byMonth[key] = { count: 0, kwh: 0, cost: 0, snapCount: 0, items: [] };
     byMonth[key].count++;
     byMonth[key].kwh += c.kwh;
     byMonth[key].cost += c.total;
     if (c.snap) byMonth[key].snapCount++;
+    byMonth[key].items.push(c);
   });
 
   const rows = Object.keys(byMonth).sort().reverse().map(key => {
@@ -1907,17 +1918,43 @@ function renderMonthStats() {
     const [y, mo] = key.split('-');
     const label = new Date(parseInt(y), parseInt(mo) - 1, 1)
       .toLocaleDateString('de-AT', { month: 'long', year: 'numeric' });
+    const open = expandedMonths.has(key);
+
+    // Höchste Ladeleistung des Monats – ab 2027 die Grösse, die den
+    // Leistungspreis bestimmt. Nur zeigen, wenn überhaupt Werte da sind.
+    const peak = m.items.reduce((mx, c) => (c.maxKw > 0 && c.maxKw > mx ? c.maxKw : mx), 0);
+
+    const detail = !open ? '' : `
+      <div class="month-detail">
+        ${m.items.slice().sort((a, b) =>
+            (b.date + (b.time || '')).localeCompare(a.date + (a.time || ''))).map(c => `
+          <div class="md-row">
+            <span class="md-date">${fmtDateShort(c.date)}${c.time ? ' · ' + c.time : ''}${c.snap ? ' ☀️' : ''}</span>
+            <span class="md-kwh">${fmt(c.kwh, 1)} kWh</span>
+            <span class="md-peak">${c.maxKw > 0 ? fmt(c.maxKw, 2) + ' kW' : '—'}</span>
+            <span class="md-cost">${fmt(c.total)} €</span>
+          </div>
+        `).join('')}
+        ${peak > 0 ? `<div class="md-foot">Höchste Ladeleistung im Monat: <strong>${fmt(peak, 2)} kW</strong></div>` : ''}
+      </div>`;
+
     return `
-      <div class="month-stat-row">
-        <div class="msr-left">
-          <div class="msr-month">${label}</div>
-          <div class="msr-meta">${m.count} Ladung${m.count !== 1 ? 'en' : ''}${m.snapCount > 0 ? ' · ☀️ ' + m.snapCount : ''}</div>
+      <div class="month-stat-block${open ? ' is-open' : ''}">
+        <div class="month-stat-row" role="button" tabindex="0" aria-expanded="${open}"
+             onclick="toggleMonthDetail('${key}')"
+             onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleMonthDetail('${key}');}">
+          <span class="msr-chevron">${open ? '▾' : '▸'}</span>
+          <div class="msr-left">
+            <div class="msr-month">${label}</div>
+            <div class="msr-meta">${m.count} Ladung${m.count !== 1 ? 'en' : ''}${m.snapCount > 0 ? ' · ☀️ ' + m.snapCount : ''}</div>
+          </div>
+          <div class="msr-mid">${fmt(m.kwh, 1)}<span class="msr-unit"> kWh</span></div>
+          <div class="msr-right">
+            <div class="msr-cost">${fmt(m.cost)} €</div>
+            <div class="msr-avg">${fmt(avgCt, 1)} ct/kWh</div>
+          </div>
         </div>
-        <div class="msr-mid">${fmt(m.kwh, 1)}<span class="msr-unit"> kWh</span></div>
-        <div class="msr-right">
-          <div class="msr-cost">${fmt(m.cost)} €</div>
-          <div class="msr-avg">${fmt(avgCt, 1)} ct/kWh</div>
-        </div>
+        ${detail}
       </div>`;
   }).join('');
 
