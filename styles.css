@@ -154,6 +154,45 @@ main { padding: 0 20px; max-width: 480px; margin: 0 auto; }
 }
 .chart-header .badge.badge-warn { background: var(--red-dim); color: var(--red); }
 
+/* === AUFKLAPPBARE SEKTIONEN === */
+.section-toggle {
+  display: flex; align-items: center; gap: 8px;
+  cursor: pointer; user-select: none;
+}
+.section-toggle:focus-visible { outline: 2px solid var(--primary); outline-offset: 4px; border-radius: 6px; }
+.cs-chevron {
+  font-size: 12px; color: var(--text-muted);
+  transition: transform .2s ease;
+  line-height: 1;
+}
+.collapse-section.is-collapsed .cs-chevron { transform: rotate(-90deg); }
+.collapse-section.is-collapsed .cs-body { display: none; }
+/* Zugeklappt hängt unter dem Titel sonst noch der volle Body-Abstand, und
+   mehrere zugeklappte Sektionen stehen weit auseinander. */
+.collapse-section.is-collapsed > .section-title { margin-bottom: 4px; }
+
+/* === KWH JE MONAT === */
+.kwh-chart { padding-bottom: 18px; }
+.kc-plot { position: relative; height: 130px; }
+.kc-bars { display: flex; align-items: flex-end; gap: 6px; height: 100%; }
+.kc-col { flex: 1; position: relative; height: 100%; min-width: 0; }
+.kc-bar {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  background: var(--primary); border-radius: 3px 3px 0 0;
+  transition: height .25s ease;
+}
+.kc-bar-none { height: 3px; background: var(--border); }
+.kc-val {
+  position: absolute; left: 0; right: 0; text-align: center;
+  font-size: 10px; font-weight: 600; font-variant-numeric: tabular-nums;
+  color: var(--text-secondary); white-space: nowrap;
+}
+.kc-label {
+  position: absolute; bottom: -16px; left: 0; right: 0; text-align: center;
+  font-size: 10px; color: var(--text-muted); white-space: nowrap;
+}
+.kc-note { font-size: 10px; color: var(--text-muted); margin-top: 6px; text-align: right; }
+
 /* === TARIF-ERINNERUNG === */
 .reminder {
   background: var(--surface);

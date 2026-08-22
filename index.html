@@ -8,7 +8,7 @@
 <title>Wallbox – E-Auto Lade Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="./styles.css?v=1.14.0"/>
+<link rel="stylesheet" href="./styles.css?v=1.15.0"/>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 </head>
@@ -76,20 +76,30 @@
 
     <div id="insight-area"></div>
 
-    <div class="section-title">Ersparnis vs. Alternativen</div>
+    <!-- Titel wird von renderSavings() mitgerendert (aufklappbare Sektion) -->
     <div id="savings-area"></div>
 
     <div id="amortisation-area"></div>
 
     <div id="month-stats-area"></div>
 
-    <div class="section-title">⚡ Höchste Ladeleistung / Monat</div>
-    <div class="chart-container">
-      <div class="chart-header">
-        <span style="font-size:12px;color:var(--text-secondary)">Basis für den Leistungspreis ab 2027</span>
-        <span class="badge" id="peak-badge"></span>
+    <div id="kwh-chart-area"></div>
+
+    <div class="collapse-section" id="sec-peak">
+      <div class="section-title section-toggle" role="button" tabindex="0" aria-expanded="true"
+           onclick="toggleSection('peak')"
+           onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleSection('peak');}">
+        <span class="cs-chevron">▾</span><span>⚡ Höchste Ladeleistung / Monat</span>
       </div>
-      <div id="peak-chart-area"></div>
+      <div class="cs-body">
+        <div class="chart-container">
+          <div class="chart-header">
+            <span style="font-size:12px;color:var(--text-secondary)">Basis für den Leistungspreis ab 2027</span>
+            <span class="badge" id="peak-badge"></span>
+          </div>
+          <div id="peak-chart-area"></div>
+        </div>
+      </div>
     </div>
 
     <div class="section-title">Letzte Ladung</div>
@@ -363,6 +373,6 @@
   </div>
 </div>
 
-<script src="./script.js?v=1.14.0"></script>
+<script src="./script.js?v=1.15.0"></script>
 </body>
 </html>
