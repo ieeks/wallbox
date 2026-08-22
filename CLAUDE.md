@@ -18,7 +18,7 @@ sehen Nutzer nach einem Deploy noch die alte Version.
 
 ---
 
-## Aktuelle Version: 1.14.0
+## Aktuelle Version: 1.15.0
 
 ---
 
@@ -169,6 +169,45 @@ Balken darüber rot, darunter grün. Badge zählt die Monate über der Schwelle.
   sonst streicht die Linie durch den Text. Linie liegt per `z-index` **über** den
   Balken – nur so ist „drüber oder drunter" sofort ablesbar.
 - Farbtoken `--red` / `--red-dim` wurden dafür in beide Themes ergänzt (gab es vorher nicht).
+
+---
+
+## Aufklappbare Dashboard-Sektionen (`sectionShell`, ab v1.15.0)
+
+„Ersparnis vs. Alternativen", „Amortisation Wallbox", „Monatsverlauf", „Geladene
+Energie / Monat" und „Höchste Ladeleistung / Monat" lassen sich über die Überschrift
+zu- und aufklappen.
+
+- Zustand in `collapsedSections` (Set von IDs), persistiert in **localStorage**
+  (`lf_collapsed`) – bewusst weder in `settings` (sonst landet reine Ansicht über
+  `syncToCloud()` in der Cloud und am Handy klappt zu, was am Desktop zugeklappt wurde)
+  noch nur im Speicher wie `expandedMonths` (ein Reload soll den Zustand behalten).
+- `sectionShell(id, title, body)` baut Kopf + `.cs-body`; die vier JS-gerenderten
+  Sektionen nutzen sie. Die Peak-Sektion steht fest in `index.html` und bekommt ihren
+  Zustand beim Start über `applyCollapsedState()`.
+- `toggleSection()` schaltet nur die Klasse `is-collapsed` am Wrapper um, ohne
+  Neu-Rendern – die Sektionen kommen aus verschiedenen `render*`-Funktionen.
+- Titel sind `role="button"` + `tabindex` + Enter/Space, analog zu den Monatszeilen.
+- Die Sektionstitel der JS-Sektionen liegen jetzt **in** der jeweiligen
+  `render*`-Funktion (vorher stand „Ersparnis vs. Alternativen" statisch im HTML) –
+  sonst bliebe beim Zuklappen die Überschrift doppelt stehen.
+
+---
+
+## kWh-je-Monat-Diagramm (`renderKwhChart`, ab v1.15.0)
+
+Balken je Monat mit der geladenen Energie, nur in Jahres- und Gesamt-Übersicht
+(im Monatsmodus gäbe es genau einen Balken). Badge: Summe, Untertitel: Ø kWh/Monat.
+
+- Die Zeitachse wird über `monthKeysBetween()` **lückenlos** aufgefüllt. Anders als
+  beim Peak-Diagramm ist ein Monat ohne Ladung hier eine echte 0 (kein fehlender
+  Messwert) und bekommt einen Stummel-Balken – sonst rücken zwei Monate nebeneinander,
+  zwischen denen ein halbes Jahr liegt.
+- Bis 12 Balken stehen die Werte über den Säulen, darüber (`dense`) nur noch jedes
+  dritte Monatslabel plus Jahreswechsel (`Jän 26`); Werte dann per `title`-Tooltip.
+  Neben einem Jahres-Label entfällt das Raster-Label, sonst überlappen beide.
+- `KWH_CHART_MAX_MONTHS = 24` begrenzt die Historie, danach Fussnote – bei mehr
+  werden die Balken auf dem Handy zu Strichen.
 
 ---
 

@@ -142,6 +142,70 @@ settings = {
 let currentPeriod = 'month';
 
 // =====================================================================
+// AUFKLAPPBARE DASHBOARD-SEKTIONEN
+// =====================================================================
+// Zugeklappte Sektionen liegen in localStorage (`lf_collapsed`), bewusst NICHT
+// in `settings`: das ist reiner Ansichtszustand dieses Geräts und hätte über
+// syncToCloud() nichts in der Cloud verloren – am Handy will man andere
+// Blöcke offen haben als am Desktop. Anders als `expandedMonths` überlebt es
+// aber einen Reload, sonst klappt bei jedem Start alles wieder auf.
+let collapsedSections = new Set(readCollapsed());
+
+function readCollapsed() {
+  try { return JSON.parse(localStorage.getItem('lf_collapsed') || '[]'); }
+  catch (e) { return []; }
+}
+
+function saveCollapsed() {
+  try { localStorage.setItem('lf_collapsed', JSON.stringify([...collapsedSections])); }
+  catch (e) { /* Safari Private Mode – Zustand gilt dann nur für diese Sitzung */ }
+}
+
+// Kopf + Körper einer aufklappbaren Sektion. Der Zustand steckt als Klasse am
+// Wrapper, damit toggleSection() ohne Neu-Rendern auskommt (die Sektionen
+// werden von unterschiedlichen render*-Funktionen erzeugt).
+function sectionShell(id, title, bodyHtml) {
+  const collapsed = collapsedSections.has(id);
+  return `
+    <div class="collapse-section${collapsed ? ' is-collapsed' : ''}" id="sec-${id}">
+      ${sectionHead(id, title, collapsed)}
+      <div class="cs-body">${bodyHtml}</div>
+    </div>`;
+}
+
+function sectionHead(id, title, collapsed) {
+  return `<div class="section-title section-toggle" role="button" tabindex="0"
+       aria-expanded="${!collapsed}"
+       onclick="toggleSection('${id}')"
+       onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleSection('${id}');}">
+    <span class="cs-chevron">▾</span><span>${title}</span>
+  </div>`;
+}
+
+function toggleSection(id) {
+  const el = document.getElementById('sec-' + id);
+  if (!el) return;
+  const collapsed = !collapsedSections.has(id);
+  if (collapsed) collapsedSections.add(id); else collapsedSections.delete(id);
+  el.classList.toggle('is-collapsed', collapsed);
+  const head = el.querySelector('.section-toggle');
+  if (head) head.setAttribute('aria-expanded', String(!collapsed));
+  saveCollapsed();
+}
+
+// Sektionen, die fest im HTML stehen (statt von JS gerendert zu werden),
+// bekommen ihren gespeicherten Zustand beim Start verpasst.
+function applyCollapsedState() {
+  document.querySelectorAll('.collapse-section').forEach(el => {
+    const id = (el.id || '').replace(/^sec-/, '');
+    const collapsed = collapsedSections.has(id);
+    el.classList.toggle('is-collapsed', collapsed);
+    const head = el.querySelector('.section-toggle');
+    if (head) head.setAttribute('aria-expanded', String(!collapsed));
+  });
+}
+
+// =====================================================================
 // PERSIST (localStorage + Firestore)
 // =====================================================================
 function persist() {
@@ -761,6 +825,7 @@ function refreshDashboard() {
 
   // Chart
   renderPeakChart(filtered);
+  renderKwhChart(filtered);
   renderReminders();
   renderInsights();
   renderSavings();
@@ -1101,6 +1166,95 @@ function renderPeakChart(data) {
       : `alle unter ${PEAK_THRESHOLD_KW} kW`;
     badge.classList.toggle('badge-warn', overCount > 0);
   }
+}
+
+// =====================================================================
+// KWH JE MONAT (Balken) – nur in Jahres- und Gesamt-Übersicht
+// =====================================================================
+// Anders als beim Peak-Diagramm sind Lücken hier eine echte Aussage: ein Monat
+// ohne Ladung hat 0 kWh (kein fehlender Messwert). Deshalb wird die Zeitachse
+// lückenlos aufgefüllt – sonst rücken zwei Monate nebeneinander, zwischen
+// denen ein halbes Jahr liegt.
+const KWH_CHART_MAX_MONTHS = 24;
+
+function monthKeysBetween(from, to) {
+  const keys = [];
+  let y = parseInt(from.slice(0, 4)), m = parseInt(from.slice(5, 7));
+  const yEnd = parseInt(to.slice(0, 4)), mEnd = parseInt(to.slice(5, 7));
+  while (y < yEnd || (y === yEnd && m <= mEnd)) {
+    keys.push(`${y}-${String(m).padStart(2, '0')}`);
+    if (++m > 12) { m = 1; y++; }
+  }
+  return keys;
+}
+
+function renderKwhChart(data) {
+  const area = document.getElementById('kwh-chart-area');
+  if (!area) return;
+
+  if (currentPeriod === 'month' || data.length === 0) { area.innerHTML = ''; return; }
+
+  const byMonth = {};
+  data.forEach(c => {
+    const key = c.date.slice(0, 7);
+    if (!byMonth[key]) byMonth[key] = { kwh: 0, count: 0 };
+    byMonth[key].kwh += c.kwh;
+    byMonth[key].count++;
+  });
+
+  const present = Object.keys(byMonth).sort();
+  const nowKey = new Date().toISOString().slice(0, 7);
+  const last = present[present.length - 1];
+  let keys = monthKeysBetween(present[0], last > nowKey ? last : nowKey);
+
+  // Bei sehr langer Historie werden die Balken sonst zu Strichen.
+  const truncated = keys.length > KWH_CHART_MAX_MONTHS;
+  if (truncated) keys = keys.slice(-KWH_CHART_MAX_MONTHS);
+
+  const maxKwh = Math.max(...keys.map(k => (byMonth[k] ? byMonth[k].kwh : 0)));
+  if (maxKwh <= 0) { area.innerHTML = ''; return; }
+
+  // Ab 13 Balken haben die Werte über den Säulen keinen Platz mehr; dann nur
+  // noch jedes dritte Monatslabel (plus Jahreswechsel) und Werte per Tooltip.
+  const dense = keys.length > 12;
+  const janIdx = new Set(keys.map((k, i) => (k.slice(5) === '01' ? i : -1)).filter(i => i >= 0));
+
+  const bars = keys.map((k, i) => {
+    const kwh = byMonth[k] ? byMonth[k].kwh : 0;
+    const h = (kwh / maxKwh) * 100;
+    const d = new Date(parseInt(k.slice(0, 4)), parseInt(k.slice(5, 7)) - 1, 1);
+    const short = d.toLocaleDateString('de-AT', { month: 'short' });
+    const isJan = k.slice(5) === '01';
+    // Neben einem Jahreswechsel-Label ('Jän 26') ist kein Platz mehr – dort
+    // fällt das Raster-Label weg, sonst überlappen die beiden.
+    const showLabel = !dense || isJan
+      || (!janIdx.has(i - 1) && !janIdx.has(i + 1) && (i % 3 === 0 || i === keys.length - 1));
+    const label = isJan && dense ? `${short} ${k.slice(2, 4)}` : short;
+    const count = byMonth[k] ? byMonth[k].count : 0;
+    const title = `${d.toLocaleDateString('de-AT', { month: 'long', year: 'numeric' })}: ${fmt(kwh, 1)} kWh`
+      + ` (${count} Ladung${count !== 1 ? 'en' : ''})`;
+    return `
+      <div class="kc-col" title="${title}">
+        ${dense || kwh === 0 ? '' : `<span class="kc-val" style="bottom:calc(${h}% + 4px)">${fmt(kwh, 0)}</span>`}
+        <div class="kc-bar${kwh === 0 ? ' kc-bar-none' : ''}" style="${kwh === 0 ? '' : `height:${h}%`}"></div>
+        ${showLabel ? `<span class="kc-label">${label}</span>` : ''}
+      </div>`;
+  }).join('');
+
+  const totalKwh = keys.reduce((sum, k) => sum + (byMonth[k] ? byMonth[k].kwh : 0), 0);
+  const avg = totalKwh / keys.length;
+
+  area.innerHTML = sectionShell('kwhchart', '🔋 Geladene Energie / Monat', `
+    <div class="chart-container">
+      <div class="chart-header">
+        <span style="font-size:12px;color:var(--text-secondary)">Ø ${fmt(avg, 1)} kWh pro Monat</span>
+        <span class="badge">${fmt(totalKwh, 0)} kWh gesamt</span>
+      </div>
+      <div class="kwh-chart">
+        <div class="kc-plot"><div class="kc-bars">${bars}</div></div>
+      </div>
+      ${truncated ? `<div class="kc-note">nur die letzten ${KWH_CHART_MAX_MONTHS} Monate</div>` : ''}
+    </div>`);
 }
 
 // =====================================================================
@@ -1574,8 +1728,10 @@ function renderSavings() {
   const area = document.getElementById('savings-area');
   if (!area) return;
 
+  const shell = body => { area.innerHTML = sectionShell('savings', 'Ersparnis vs. Alternativen', body); };
+
   if (charges.length === 0) {
-    area.innerHTML = '<div class="empty-state" style="padding:16px;">Noch keine Ladevorgänge erfasst.</div>';
+    shell('<div class="empty-state" style="padding:16px;">Noch keine Ladevorgänge erfasst.</div>');
     return;
   }
 
@@ -1590,7 +1746,7 @@ function renderSavings() {
   }
 
   if (filtered.length === 0) {
-    area.innerHTML = '<div style="color:var(--text-muted);font-size:14px;padding:8px 0;">Keine Daten im gewählten Zeitraum.</div>';
+    shell('<div style="color:var(--text-muted);font-size:14px;padding:8px 0;">Keine Daten im gewählten Zeitraum.</div>');
     return;
   }
 
@@ -1707,7 +1863,7 @@ function renderSavings() {
   `;
 
   html += `</div>`;
-  area.innerHTML = html;
+  shell(html);
 }
 
 // =====================================================================
@@ -1766,14 +1922,12 @@ function renderAmortisation() {
       </div>`;
   }
 
-  area.innerHTML = `
-    <div class="section-title">🏠 Amortisation Wallbox</div>
+  area.innerHTML = sectionShell('amortisation', '🏠 Amortisation Wallbox', `
     <div class="savings-grid">
       ${amortCard('Tesla Supercharger', '⚡', savingTeslaAll)}
       ${amortCard('Tanke Wien kWh', '🔵', savingTankeAll)}
       ${amortCard('Benzin (Tiguan)', '⛽', savingBenzinAll)}
-    </div>
-  `;
+    </div>`);
 }
 
 // =====================================================================
@@ -2056,9 +2210,8 @@ function renderMonthStats() {
       </div>`;
   }).join('');
 
-  area.innerHTML = `
-    <div class="section-title">📅 Monatsverlauf</div>
-    <div class="month-stats-card">${rows}</div>`;
+  area.innerHTML = sectionShell('monthstats', '📅 Monatsverlauf',
+    `<div class="month-stats-card">${rows}</div>`);
 }
 
 // =====================================================================
@@ -2209,5 +2362,6 @@ document.addEventListener('visibilitychange', () => {
 initAddPage();
 initImport();
 refreshDashboard();
+applyCollapsedState();   // statische Sektionen im HTML nachziehen
 fetchBenzinpreis();
 startLiveStatus();
