@@ -31,6 +31,17 @@ sehen Nutzer nach einem Deploy noch die alte Version.
 **API:** `https://{GOE_SERIAL}.api.v3.go-e.io/api/status`
 Header: `Authorization: Bearer $GOE_TOKEN`
 
+**Fehlerbehandlung (`fetchStatus`):** Die Cloud kennt drei Antworten – `200` (Daten da),
+`403` (Charger offline **oder** Cloud-API nicht aktiviert) und `404` (Auth ok, Charger
+sendet gerade nichts). 403/404 sind Betriebszustände, keine Defekte, und beenden den Lauf
+**grün** – sonst steht die Action bei jedem WLAN-Aussetzer auf Fehler und ein echter
+Defekt fällt nicht mehr auf. Sichtbar bleiben sie über eine `::warning::`-Annotation,
+denn 403 heisst eben auch „Cloud-API in der App abgedreht" – ein Zustand, der von allein
+nie wieder weggeht. 5xx und Netzwerkfehler werden 3× mit 5s/10s-Backoff wiederholt und
+erst dann rot. Kein Datenverlust dabei: die Session steht bis zur nächsten in `wh`/`lch`,
+und der Zeitstempel aus `now - (rbt - lccfc)` stimmt auch Stunden später noch. Was fehlt,
+ist der Peak – `nrg[11]` wird nur bei `car === 2` abgetastet.
+
 **Erkennungslogik:**
 - `car === 1` (idle/abgesteckt) + `wh > 10` + `lch` neu → neue Session
 - Session-Zeitpunkt: `now - (rbt - lccfc)` → exakter Endzeitpunkt für SNAP

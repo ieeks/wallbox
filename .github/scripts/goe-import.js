@@ -122,6 +122,69 @@ async function consumePeak() {
 }
 
 // =====================================================================
+// GO-E CLOUD API
+// Statuscodes laut cloudapi-de.md:
+//   200 – Daten liegen vor
+//   403 – Charger ist offline ODER die Cloud-API ist nicht aktiviert
+//   404 – Auth war korrekt, der Charger sendet gerade keine Daten
+//
+// 403/404 sind Betriebszustände, keine Defekte: eine Wallbox ohne Strom oder
+// WLAN ist der Normalfall, und beim nächsten Lauf ist alles wieder da – die
+// Session bleibt in `wh`/`lch` stehen, bis eine neue beginnt, und der
+// Zeitstempel kommt aus `now - (rbt - lccfc)`, bleibt also auch nach Stunden
+// Ausfall korrekt. Solche Läufe dürfen den Job nicht rot färben, sonst steht
+// die Action dauerhaft auf Fehler und ein echter Defekt fällt nicht mehr auf.
+// Rot bleibt, was wirklich kaputt ist: 5xx, Netzwerkfehler, unlesbare Antwort.
+//
+// Sichtbar bleibt der Zustand trotzdem: `::warning::` hängt eine Annotation an
+// den grünen Run. Das ist wichtig, weil 403 eben auch „Cloud-API in der App
+// abgedreht" heißen kann – ein Zustand, der von allein nie wieder weggeht.
+//
+// Was ein Ausfall trotzdem kostet: der Peak-Tracker tastet `nrg[11]` nur bei
+// `car === 2` ab. Offline-Zeit während einer laufenden Ladung fehlt in `maxKw`.
+// =====================================================================
+const OFFLINE_CODES  = new Set([403, 404]);
+const FETCH_TRIES    = 3;
+const RETRY_DELAY_MS = 5000;
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// → Status-Objekt, oder null wenn der Charger offline/stumm ist.
+// Wirft nur bei echten Fehlern (dann exit 1 über run().catch).
+async function fetchStatus(url, token) {
+  let last = '';
+
+  for (let attempt = 1; attempt <= FETCH_TRIES; attempt++) {
+    if (attempt > 1) await sleep(RETRY_DELAY_MS * (attempt - 1));
+
+    let res;
+    try {
+      res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    } catch (e) {
+      last = `Netzwerkfehler: ${e.message}`;
+      console.log(`Versuch ${attempt}/${FETCH_TRIES} – ${last}`);
+      continue;
+    }
+
+    if (res.ok) return await res.json();
+
+    // Offline/stumm: kein Retry, das ändert sich nicht in 5 Sekunden.
+    if (OFFLINE_CODES.has(res.status)) {
+      const grund = res.status === 403
+        ? 'Charger offline oder Cloud-API nicht aktiviert (App → Internet → Erweiterte Einstellungen bzw. api key "cae")'
+        : 'Charger online, sendet aber gerade keine Daten';
+      console.log(`::warning::go-e API ${res.status}: ${grund}. Lauf übersprungen, kein Datenverlust.`);
+      return null;
+    }
+
+    last = `HTTP ${res.status} ${res.statusText}`;
+    console.log(`Versuch ${attempt}/${FETCH_TRIES} – ${last}`);
+  }
+
+  throw new Error(`go-e API nach ${FETCH_TRIES} Versuchen nicht erreichbar (${last})`);
+}
+
+// =====================================================================
 // MAIN
 // =====================================================================
 async function run() {
@@ -130,16 +193,8 @@ async function run() {
   const token  = process.env.GOE_TOKEN;
   const url = `https://${serial}.api.v3.go-e.io/api/status`;
 
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-
-  if (!res.ok) {
-    console.log(`go-e API Fehler: ${res.status} ${res.statusText}`);
-    process.exit(1);
-  }
-
-  const status = await res.json();
+  const status = await fetchStatus(url, token);
+  if (!status) return; // offline/stumm – nichts zu tun, aber kein Fehler
 
   // 2. Relevante Felder loggen
   const car   = status.car;
