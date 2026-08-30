@@ -429,6 +429,70 @@
   </div>
 </div>
 
+<!-- LADUNG VON HAND EINTRAGEN / KORRIGIEREN -->
+<div class="modal-overlay" id="trip-charge-form" onclick="if(event.target===this)tripCloseChargeForm()">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <h3 id="charge-form-title">Ladung eintragen</h3>
+    <div class="setting-hint" id="charge-form-hint"></div>
+    <input type="hidden" id="cf-id"/>
+    <label class="input-label">Datum</label>
+    <div class="input-card date-input-wrap">
+      <span class="material-symbols-outlined ic-icon">calendar_today</span>
+      <input type="date" id="cf-date" style="color:var(--text);font-family:Inter;font-size:14px;"/>
+    </div>
+    <label class="input-label">Ort</label>
+    <div class="input-card">
+      <span class="material-symbols-outlined ic-icon">place</span>
+      <input type="text" id="cf-location" placeholder="z. B. Völkermarkt"/>
+    </div>
+    <label class="input-label">Anbieter</label>
+    <div class="input-card">
+      <span class="material-symbols-outlined ic-icon">ev_station</span>
+      <select id="cf-provider" style="flex:1;border:none;background:transparent;color:var(--text);font-family:Inter;font-size:14px;outline:none;">
+        <option value="manuell">Anderer Anbieter</option>
+        <option value="tesla-at">Tesla AT</option>
+        <option value="tesla-de">Tesla DE</option>
+        <option value="tesla-it">Tesla IT</option>
+        <option value="ionity">IONITY</option>
+        <option value="electra">Electra</option>
+        <option value="ewe-go">EWE Go</option>
+      </select>
+    </div>
+    <label class="input-label">Geladene Energie <span style="color:var(--text-muted);font-weight:400;">– leer lassen, wenn die Rechnung keine nennt</span></label>
+    <div class="input-card">
+      <span class="material-symbols-outlined ic-icon">bolt</span>
+      <input type="number" id="cf-kwh" step="0.001" min="0" inputmode="decimal" placeholder="0,000"/>
+      <span class="ic-unit">kWh</span>
+    </div>
+    <label class="input-label">Rechnungsbetrag (brutto)</label>
+    <div class="input-card">
+      <span class="material-symbols-outlined ic-icon">euro_symbol</span>
+      <input type="number" id="cf-gross" step="0.01" min="0" inputmode="decimal" placeholder="0,00"/>
+      <span class="ic-unit">€</span>
+    </div>
+    <label class="input-label">Steuersatz <span style="color:var(--text-muted);font-weight:400;">– optional, für den Nettobetrag</span></label>
+    <div class="input-card">
+      <span class="material-symbols-outlined ic-icon">percent</span>
+      <input type="number" id="cf-vat" step="1" min="0" max="30" inputmode="decimal" placeholder="20"/>
+      <span class="ic-unit">%</span>
+    </div>
+    <label class="input-label">Fahrtabschnitt</label>
+    <div class="input-card">
+      <span class="material-symbols-outlined ic-icon">route</span>
+      <select id="cf-leg" style="flex:1;border:none;background:transparent;color:var(--text);font-family:Inter;font-size:14px;outline:none;">
+        <option value="outbound">Hinfahrt</option>
+        <option value="onsite">Vor Ort</option>
+        <option value="return">Rückfahrt</option>
+      </select>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:20px;">
+      <button class="ip-btn-cancel" style="flex:1;padding:16px;border:none;border-radius:12px;font-family:Inter;font-weight:600;font-size:14px;cursor:pointer;background:var(--surface-highest);color:var(--text);" onclick="tripCloseChargeForm()">Abbrechen</button>
+      <button class="btn-save" style="flex:2;margin-top:0;" onclick="tripSaveCharge()">Speichern</button>
+    </div>
+  </div>
+</div>
+
 <!-- SPLIT MODAL – Sammelrechnung auf Einzelsessions aufteilen -->
 <div class="modal-overlay" id="trip-split" onclick="if(event.target===this)tripCloseSplit()">
   <div class="modal">

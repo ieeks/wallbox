@@ -473,4 +473,51 @@ nicht andersherum, denn die App nennt Beträge, keine Mengen.
 - Die Zeilen werden aus dem DOM gelesen (`readSplitRows()`), nicht in einer
   Modul-Variable gespiegelt – dasselbe Muster wie `readTariffRows()`.
 
-**Noch offen:** Vergleichsansicht über alle Trips (§9), Claude-Fallback (§7).
+### Ladung von Hand (Spec §4)
+
+Ein PDF, das kein Parser liest, landet nicht im Nichts: die unerkannten
+Dateien bekommen einen eigenen Bereich unter der Drop-Zone, je Datei einen
+Knopf „eintragen", der die Eingabemaske mit dem Dateinamen vorbelegt. Ohne
+den käme eine Rechnung von einem unbekannten Anbieter überhaupt nicht in
+einen Trip – optional ist laut Spec nur der Claude-Fallback, nicht die Maske.
+
+Dieselbe Maske korrigiert auch geparste Zeilen (`bearbeiten`), etwa wenn eine
+Zeile `needsReview` trägt. Handeinträge bekommen `provider: 'manuell'` und eine
+zeitstempelbasierte `id` – es gibt keine Rechnung, die doppelt eingelesen
+werden könnte, also braucht es keine deterministische.
+
+Der Import-Bericht (übernommen / Duplikate / unerkannt) liegt in einer
+Modul-Variable von `ui.js`, nicht im DOM: `renderTripDetail()` baut die Seite
+neu auf, und die „eintragen"-Knöpfe müssen das überstehen.
+
+### Trips im Vergleich (Spec §9)
+
+Unter der Trip-Liste, aufklappbar über `sectionShell()` aus `script.js` (gleiche
+Optik und dieselbe Zuklapp-Persistenz wie die Dashboard-Sektionen).
+
+- **Zwei getrennte Diagramme, keine zweite Y-Achse.** Verbrauch (kWh/100km)
+  und Ø-Preis (€/kWh) haben nichts miteinander zu tun; eine gemeinsame Skala
+  würde eine Beziehung suggerieren, die es nicht gibt.
+- Je Diagramm **eine** Datenreihe, deshalb keine Legende – der Titel benennt
+  sie. Werte stehen direkt an den Balken (bei so wenigen Trips lesbarer als
+  ein Tooltip), Details zusätzlich am `title`.
+- Balken sind auf 52 px begrenzt: bei drei Trips würde ein Balken über die
+  volle Spalte 120 px breit und wirkt dann wie eine Fläche, nicht wie ein
+  Messwert.
+- Darunter dieselben Zahlen als Tabelle – lesbar auch ohne Farbe und ohne
+  Balkenlängen.
+- Zeitachse chronologisch, älteste links. `getTrips()` sortiert für die Liste
+  absteigend und wird hier umgedreht.
+- Trips ohne Kilometer haben keinen Verbrauch: Stummel-Balken und `—`, nicht 0.
+- Beschriftet wird mit `trip.title` vor `trip.to` – zwei Reisen zum selben Ziel
+  („Markdorf I" / „Markdorf II") wären sonst nicht auseinanderzuhalten.
+
+Der Dark-Mode-`--primary` (#F59E0B) liegt knapp ausserhalb des empfohlenen
+Helligkeitsbands für Diagrammfarben, besteht die Kontrastprüfung aber. Das ist
+ein Bestands-Token, das überall in der App steckt – dafür wird das Theme nicht
+umgebaut.
+
+**km-Rückrechnung** wird mit ihrem Plausibilitätsband ausgewiesen
+(`~976 km (geschätzt, 927–1 024)`), nicht als scheinbar exakte Zahl.
+
+**Noch offen:** Claude-Fallback (§7, laut Spec optional).

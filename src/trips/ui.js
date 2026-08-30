@@ -22,6 +22,7 @@ const PROVIDER_LABELS = {
   'electra': 'Electra',
   'ewe-go': 'EWE Go',
   'home': 'go-e',
+  'manuell': 'von Hand',
 };
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
@@ -77,9 +78,139 @@ export function tripSummary(trip) {
   });
 }
 
+// Ergebnis des letzten PDF-Imports. Liegt hier statt im DOM, damit es ein
+// Neu-Rendern der Detailseite übersteht – die „von Hand eintragen"-Knöpfe
+// der unerkannten Dateien müssen anklickbar bleiben.
+let importReport = null;
+
+export function setImportReport(report) {
+  importReport = report;
+}
+
 // =====================================================================
 // TRIP-LISTE
 // =====================================================================
+// =====================================================================
+// VERGLEICH ÜBER ALLE TRIPS (Spec §9)
+// =====================================================================
+// Zwei getrennte Diagramme, bewusst KEINE zweite Y-Achse: Verbrauch
+// (kWh/100km) und Preis (€/kWh) haben nichts miteinander zu tun, und eine
+// gemeinsame Skala würde eine Beziehung suggerieren, die es nicht gibt.
+//
+// Je Diagramm eine Datenreihe – deshalb keine Legende, der Titel benennt
+// sie. Werte stehen direkt an den Balken (bei so wenigen Trips lesbarer als
+// ein Tooltip allein), Details hängen zusätzlich am `title`.
+//
+// Trips ohne Kilometer haben keinen Verbrauch. Die bekommen einen
+// Stummel-Balken und „—", nicht 0 – dieselbe Regel wie beim Peak-Diagramm:
+// ein fehlender Messwert ist keine Null.
+function compareChart({ title, subtitle, rows, unit, digits }) {
+  const werte = rows.map(r => r.value).filter(v => typeof v === 'number' && v > 0);
+  if (!werte.length) return '';
+  const max = Math.max(...werte) * 1.18;
+
+  return `
+    <div class="tcmp-block">
+      <div class="tcmp-head">
+        <span class="tcmp-title">${esc(title)}</span>
+        <span class="tcmp-sub">${esc(subtitle)}</span>
+      </div>
+      <div class="tcmp-plot">
+        <div class="tcmp-bars">
+          ${rows.map(r => {
+            const hat = typeof r.value === 'number' && r.value > 0;
+            const h = hat ? Math.max(4, (r.value / max) * 100) : null;
+            return `
+              <div class="tcmp-col" title="${esc(r.title)}">
+                <div class="tcmp-val${hat ? '' : ' is-none'}">${hat ? fmt(r.value, digits) : '—'}</div>
+                <div class="${hat ? 'tcmp-bar' : 'tcmp-bar-none'}"${hat ? ` style="height:${h}%"` : ''}></div>
+              </div>`;
+          }).join('')}
+        </div>
+      </div>
+      <div class="tcmp-labels">
+        ${rows.map(r => `<div class="tcmp-label">
+          <span class="tcmp-name-short">${esc(r.name)}</span>
+          <span class="tcmp-date">${esc(r.date)}</span>
+        </div>`).join('')}
+      </div>
+      <div class="tcmp-unit">${esc(unit)}</div>
+    </div>`;
+}
+
+export function renderTripCompare() {
+  const trips = getTrips();
+  if (trips.length < 2) return '';
+
+  // Zeitachse: älteste links. getTrips() sortiert für die Liste absteigend.
+  const daten = [...trips].reverse().map(t => {
+    const r = tripSummary(t);
+    const name = t.title || t.to || t.id;
+    return {
+      trip: t,
+      dateLabel: fmtDateShort(t.dateStart),
+      name,
+      consumption: r.consumption,
+      avgPrice: r.avgPrice,
+      kwh: r.kwhTotal,
+      cost: r.costTotal,
+      km: r.km,
+      kmEstimated: r.kmEstimated,
+    };
+  });
+
+  const verbrauch = compareChart({
+    title: 'Verbrauch je Trip',
+    subtitle: 'kWh/100km',
+    unit: 'Trips chronologisch, älteste links',
+    digits: 1,
+    rows: daten.map(d => ({
+      name: d.name,
+      date: d.dateLabel,
+      value: d.consumption,
+      title: `${d.name}: ${d.consumption !== null ? fmt(d.consumption, 1) + ' kWh/100km' : 'keine Kilometer eingetragen'}`,
+    })),
+  });
+
+  const preis = compareChart({
+    title: 'Ø-Ladepreis je Trip',
+    subtitle: '€/kWh brutto, inkl. Heimladung',
+    unit: 'Trips chronologisch, älteste links',
+    digits: 3,
+    rows: daten.map(d => ({
+      name: d.name,
+      date: d.dateLabel,
+      value: d.avgPrice,
+      title: `${d.name}: ${d.avgPrice !== null ? fmt(d.avgPrice, 3) + ' €/kWh' : 'keine Ladungen'}`,
+    })),
+  });
+
+  // Tabelle neben den Diagrammen: die Zahlen sollen auch ohne Farbe und
+  // ohne Balkenlängen lesbar sein.
+  const tabelle = `
+    <div class="tcmp-table">
+      <div class="tcmp-row is-head">
+        <span>Trip</span><span>km</span><span>kWh</span><span>kWh/100km</span><span>€/kWh</span><span>€</span>
+      </div>
+      ${daten.map(d => `
+        <div class="tcmp-row">
+          <span class="tcmp-name">${esc(d.name)}</span>
+          <span>${d.km ? (d.kmEstimated ? '~' : '') + fmt(d.km, 0) : '—'}</span>
+          <span>${fmt(d.kwh, 0)}</span>
+          <span>${d.consumption !== null ? fmt(d.consumption, 1) : '—'}</span>
+          <span>${d.avgPrice !== null ? fmt(d.avgPrice, 3) : '—'}</span>
+          <span>${fmt(d.cost, 0)}</span>
+        </div>`).join('')}
+    </div>`;
+
+  const body = verbrauch + preis + tabelle;
+  // sectionShell() aus script.js: gleiche Optik und dieselbe
+  // Zuklapp-Persistenz wie die Dashboard-Sektionen.
+  return window.sectionShell
+    ? window.sectionShell('trip-compare', '📈 Trips im Vergleich', body)
+    : `<div class="section-title">Trips im Vergleich</div>${body}`;
+}
+
 export function renderTripList() {
   const el = document.getElementById('page-trips');
   if (!el) return;
@@ -96,7 +227,7 @@ export function renderTripList() {
         </div>
         <div class="tc-sub">${fmtDate(t.dateStart)} – ${fmtDate(t.dateEnd)}</div>
         <div class="tc-stats">
-          <span>${r.km ? fmt(r.km, 0) + ' km' : '– km'}${r.kmEstimated ? ' *' : ''}</span>
+          <span>${r.km ? (r.kmEstimated ? '~' : '') + fmt(r.km, 0) + ' km' : '– km'}</span>
           <span>${fmt(r.kwhTotal, 1)} kWh</span>
           <span>${r.consumption !== null ? fmt(r.consumption, 1) + ' kWh/100km' : '–'}</span>
           <span>${r.count} Stopp${r.count === 1 ? '' : 's'}</span>
@@ -115,7 +246,7 @@ export function renderTripList() {
     </div>
     <button class="btn-save" onclick="tripNew()" style="margin-top:8px;">+ Neuer Trip</button>
     ${trips.length
-      ? `<div class="trip-list">${karten}</div>`
+      ? `<div class="trip-list">${karten}</div>${renderTripCompare()}`
       : `<div class="empty-state" style="margin-top:24px;">
            <span class="material-symbols-outlined">luggage</span>
            Noch kein Trip angelegt.
@@ -148,7 +279,13 @@ export function renderTripDetail(tripId) {
       <div class="th-eyebrow">Trip-Report · ${fmtDateShort(trip.dateStart)}–${fmtDate(trip.dateEnd)}</div>
       <div class="th-route">${esc(trip.from || 'Start')} ↔ ${esc(trip.to || 'Ziel')}</div>
       <div class="th-meta">
-        <span><b>${r.km ? fmt(r.km, 0) + ' km' : 'km fehlen'}</b>${r.kmEstimated ? ' (geschätzt)' : ''}</span>
+        <span><b>${r.km ? (r.kmEstimated ? '~' : '') + fmt(r.km, 0) + ' km' : 'km fehlen'}</b>${
+          // Spec §6: eine hochgerechnete Kilometerleistung wird mit ihrem
+          // Plausibilitätsband ausgewiesen, nicht als scheinbar exakte Zahl.
+          r.kmEstimated && r.kmBand
+            ? ` (geschätzt, ${fmt(r.kmBand.low, 0)}–${fmt(r.kmBand.high, 0)})`
+            : (r.kmEstimated ? ' (geschätzt)' : '')
+        }</span>
         <span>${esc(vehicleLabel(trip.vehicle))}</span>
         <span>${r.homeCount} × daheim + ${r.count - r.homeCount} Stopp${r.count - r.homeCount === 1 ? '' : 's'}</span>
       </div>
@@ -230,6 +367,8 @@ function renderStops(trip, r) {
               <button class="tr-btn" onclick="tripOpenSplit('${esc(trip.id)}','${esc(c.id)}')">aufteilen</button>` : ''}
             ${c.splitFrom ? `
               <button class="tr-btn" onclick="tripUndoSplit('${esc(trip.id)}','${esc(c.splitFrom)}')">Aufteilung zurücknehmen</button>` : ''}
+            ${!c.isHome && !c.isAggregate ? `
+              <button class="tr-btn" onclick="tripEditCharge('${esc(trip.id)}','${esc(c.id)}')">bearbeiten</button>` : ''}
             ${!c.isHome ? `
               <button class="tr-btn is-del" onclick="tripRemoveCharge('${esc(trip.id)}','${esc(c.id)}')">entfernen</button>` : `
               <button class="tr-btn is-del" onclick="tripToggleHome('${esc(trip.id)}','${esc(c.id)}')">entfernen</button>`}
@@ -285,7 +424,7 @@ function renderFuel(trip, r) {
 
   return `
     <div class="section-title">BYD vs. Verbrenner</div>
-    <div class="trip-note">Gleiche ${fmt(r.km, 0)} km mit einem Benziner
+    <div class="trip-note">Gleiche ${r.kmEstimated ? '~' : ''}${fmt(r.km, 0)} km${r.kmEstimated ? ' (hochgerechnet)' : ''} mit einem Benziner
       (${fmt(f.litersPer100Min, 1)}–${fmt(f.litersPer100Max, 1)} L/100km,
       ${fmt(lf().benzinPreis ? lf().benzinPreis() : 0, 3)} €/L). Schätzung.</div>
     <div class="trip-compare">
@@ -316,7 +455,57 @@ function renderDropZone(trip) {
       <span class="dz-btn">Dateien auswählen</span>
       <input type="file" id="trip-file-input" accept=".pdf" multiple/>
     </div>
-    <div id="trip-import-status"></div>`;
+    <div id="trip-import-status">${renderImportReport(trip)}</div>
+    <button class="tariff-add-btn" style="margin-top:10px;" onclick="tripAddCharge('${esc(trip.id)}')">
+      + Ladung von Hand eintragen
+    </button>`;
+}
+
+// Unerkannte Dateien bekommen laut Spec §4 einen eigenen Bereich mit
+// manueller Eingabemaske – eine Rechnung von einem Anbieter ohne Parser
+// muss trotzdem in den Trip kommen.
+export function renderImportReport(trip) {
+  if (!importReport || importReport.tripId !== trip.id) return '';
+
+  const { imported = 0, duplicates = 0, failed = [] } = importReport;
+  const teile = [];
+  if (imported) teile.push(`${imported} Ladung${imported === 1 ? '' : 'en'} übernommen`);
+  if (duplicates) teile.push(`${duplicates} Duplikat${duplicates === 1 ? '' : 'e'} übersprungen`);
+
+  return `
+    ${teile.length ? `<div class="trip-note">${teile.join(' · ')}.</div>` : ''}
+    ${failed.length ? `
+      <div class="trip-note" style="margin-top:12px;">
+        ${failed.length} Datei${failed.length === 1 ? '' : 'en'} nicht erkannt.
+        Werte aus der Rechnung ablesen und von Hand eintragen:
+      </div>
+      <div class="unrec-list">
+        ${failed.map((f, i) => `
+          <div class="unrec-item">
+            <div class="unrec-main">
+              <div class="unrec-name">${esc(f.fileName)}</div>
+              <div class="unrec-reason">${esc(f.reason)}</div>
+            </div>
+            <button class="tr-btn" onclick="tripAddCharge('${esc(trip.id)}', ${i})">eintragen</button>
+          </div>`).join('')}
+      </div>` : ''}`;
+}
+
+// Formular für einen Handeintrag – neu oder zur Korrektur einer geparsten Zeile.
+export function renderChargeForm(trip, charge, hint) {
+  const set = (id, wert) => { document.getElementById(id).value = wert ?? ''; };
+  document.getElementById('charge-form-title').textContent =
+    charge?.id ? 'Ladung bearbeiten' : 'Ladung eintragen';
+  document.getElementById('charge-form-hint').textContent = hint || '';
+  set('cf-id', charge?.id || '');
+  set('cf-date', charge?.date || trip.dateStart || '');
+  set('cf-location', charge?.location || '');
+  set('cf-provider', charge?.provider || 'manuell');
+  set('cf-kwh', charge?.kwh ?? '');
+  set('cf-gross', charge?.grossTotal ?? '');
+  set('cf-vat', charge?.vatRate != null ? Math.round(charge.vatRate * 100) : '');
+  set('cf-leg', charge?.leg || 'onsite');
+  document.getElementById('trip-charge-form').classList.add('show');
 }
 
 // Heimladungen werden NICHT dupliziert, sondern referenziert. Vorgeschlagen

@@ -11,13 +11,16 @@
 // =====================================================================
 import { extractPdfLines, PdfTextError, PdfLoadError } from '../lib/pdf.js';
 import { parseInvoiceText, dedupeCharges } from '../parsers/index.js';
+import { buildCharge } from '../parsers/charge.js';
 import { getTrip, getTrips, loadTrips, saveTrip, deleteTrip, newTrip, isLoaded, lf } from './store.js';
-import { renderTripList, renderTripDetail, renderTripForm, splitRowHTML, renderSplitInfo, renderSplitCheck } from './ui.js';
+import { renderTripList, renderTripDetail, renderTripForm, renderChargeForm, setImportReport,
+         splitRowHTML, renderSplitInfo, renderSplitCheck } from './ui.js';
 import { suggestLeg, estimateKwhFromMinutes, DEFAULT_ESTIMATE_KW } from './model.js';
 import { outsideWindow, splitAggregate } from './calc.js';
 
 let currentTripId = null;
 let splitContext = null;   // { tripId, chargeId } während der Aufteilung
+let chargeContext = null;  // { tripId, chargeId } während des Handeintrags
 
 const toast = msg => (window.showToast ? window.showToast(msg) : console.log(msg));
 
@@ -150,6 +153,89 @@ async function tripEstimate(tripId, chargeId) {
 }
 
 // =====================================================================
+// LADUNG VON HAND (Spec §4: Unerkannt-Bereich mit Eingabemaske)
+// =====================================================================
+// Nicht nur für unbekannte Rechnungsformate: damit lässt sich auch eine
+// geparste Zeile korrigieren, die als `needsReview` markiert wurde.
+let lastFailed = [];
+
+function tripAddCharge(tripId, failedIndex = null) {
+  const trip = getTrip(tripId);
+  if (!trip) return;
+  const datei = failedIndex !== null ? lastFailed[failedIndex] : null;
+  chargeContext = { tripId, chargeId: null, sourceFile: datei?.fileName || null };
+  renderChargeForm(trip, null, datei
+    ? `Aus „${datei.fileName}" – die Werte stehen auf der Rechnung.`
+    : 'Für Rechnungen, die kein Parser lesen kann.');
+}
+
+function tripEditCharge(tripId, chargeId) {
+  const trip = getTrip(tripId);
+  const c = (trip?.charges || []).find(x => x.id === chargeId);
+  if (!trip || !c) return;
+  chargeContext = { tripId, chargeId, sourceFile: c.sourceFile || null };
+  renderChargeForm(trip, c, c.needsReview ? (c.reviewReasons || []).join(' · ') : '');
+}
+
+function tripCloseChargeForm() {
+  document.getElementById('trip-charge-form').classList.remove('show');
+  chargeContext = null;
+}
+
+async function tripSaveCharge() {
+  const trip = getTrip(chargeContext?.tripId);
+  if (!trip) return;
+
+  const wert = id => document.getElementById(id).value.trim();
+  const zahl = id => {
+    const n = parseFloat(wert(id).replace(',', '.'));
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const date = wert('cf-date');
+  const grossTotal = zahl('cf-gross');
+  if (!date) return toast('Bitte ein Datum angeben');
+  if (!(grossTotal > 0)) return toast('Bitte den Rechnungsbetrag angeben');
+
+  const vatPct = zahl('cf-vat');
+  const vatRate = vatPct !== null ? vatPct / 100 : null;
+  const kwh = zahl('cf-kwh');
+
+  const bestehend = chargeContext.chargeId;
+  const charge = buildCharge({
+    provider: wert('cf-provider') || 'manuell',
+    // Handeinträge brauchen keine deterministische id – es gibt keine
+    // Rechnung, die zweimal eingelesen werden könnte.
+    id: bestehend || `manuell:${date}:${Date.now()}`,
+    date,
+    location: wert('cf-location') || null,
+    kwh,
+    grossTotal,
+    netTotal: vatRate !== null ? Math.round((grossTotal / (1 + vatRate)) * 100) / 100 : null,
+    vatRate,
+    unitPriceBasis: 'unknown',
+    reviewReasons: [],
+  });
+  charge.leg = wert('cf-leg') || suggestLeg(date, trip);
+  charge.sourceFile = chargeContext.sourceFile;
+
+  trip.charges = bestehend
+    ? (trip.charges || []).map(c => (c.id === bestehend ? { ...c, ...charge } : c))
+    : [...(trip.charges || []), charge];
+  await saveTrip(trip);
+
+  // Die Datei ist erledigt – sie soll nicht als „unerkannt" stehen bleiben.
+  if (chargeContext.sourceFile && !bestehend) {
+    lastFailed = lastFailed.filter(f => f.fileName !== chargeContext.sourceFile);
+    setImportReport({ ...(importState || {}), failed: lastFailed });
+  }
+
+  tripCloseChargeForm();
+  refresh();
+  toast(bestehend ? 'Ladung aktualisiert' : 'Ladung eingetragen');
+}
+
+// =====================================================================
 // SAMMELRECHNUNG AUFTEILEN (Spec §8)
 // =====================================================================
 function splitCharge() {
@@ -279,6 +365,8 @@ function initDropZone() {
   fi.addEventListener('change', ev => { importFiles([...ev.target.files]); ev.target.value = ''; });
 }
 
+let importState = null;
+
 function status(html) {
   const el = document.getElementById('trip-import-status');
   if (el) el.innerHTML = html;
@@ -298,7 +386,7 @@ async function importFiles(files) {
       const { text } = await extractPdfLines(file);
       const r = parseInvoiceText(text, { fileName: file.name });
       if (r.unrecognized) {
-        fehler.push(`${file.name}: ${r.error || 'Format nicht erkannt'}`);
+        fehler.push({ fileName: file.name, reason: r.error || 'Format nicht erkannt' });
         continue;
       }
       neu.push(...r.charges);
@@ -307,7 +395,7 @@ async function importFiles(files) {
       const grund = e instanceof PdfTextError ? e.message
         : e instanceof PdfLoadError ? e.message
         : `konnte nicht gelesen werden (${e.message})`;
-      fehler.push(`${file.name}: ${grund}`);
+      fehler.push({ fileName: file.name, reason: grund });
     }
   }
 
@@ -336,18 +424,22 @@ async function importFiles(files) {
   }
 
   trip.charges = [...(trip.charges || []), ...uebernommen];
+
+  lastFailed = fehler;
+  importState = {
+    tripId: trip.id,
+    imported: uebernommen.length,
+    duplicates: doppelt,
+    failed: fehler,
+  };
+  setImportReport(importState);
+
   await saveTrip(trip);
   renderTripDetail(trip.id);
   initDropZone();
 
-  const teile = [];
-  if (uebernommen.length) teile.push(`${uebernommen.length} Ladung${uebernommen.length === 1 ? '' : 'en'} übernommen`);
-  if (doppelt) teile.push(`${doppelt} Duplikat${doppelt === 1 ? '' : 'e'} übersprungen`);
-  status(`
-    ${teile.length ? `<div class="trip-note">${teile.join(' · ')}.</div>` : ''}
-    ${fehler.length ? `<div class="trip-warn is-warn"><span>⚠️</span><div>${fehler.map(f => f.replace(/</g, '&lt;')).join('<br>')}</div></div>` : ''}
-  `);
   if (uebernommen.length) toast(`${uebernommen.length} Ladung${uebernommen.length === 1 ? '' : 'en'} hinzugefügt`);
+  else if (fehler.length) toast(`${fehler.length} Datei${fehler.length === 1 ? '' : 'en'} nicht erkannt`);
 }
 
 // =====================================================================
@@ -358,6 +450,7 @@ Object.assign(window, {
   tripAskDelete, tripSetLeg, tripRemoveCharge, tripToggleHome, tripEstimate,
   tripOpenSplit, tripCloseSplit, tripAddSplitRow, tripRemoveSplitRow,
   tripSplitRecalc, tripApplySplit, tripUndoSplit,
+  tripAddCharge, tripEditCharge, tripCloseChargeForm, tripSaveCharge,
 });
 
 // Die Trip-Liste wird beim Start nur vorgerendert (aus localStorage), damit
