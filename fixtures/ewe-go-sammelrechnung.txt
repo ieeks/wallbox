@@ -1,0 +1,36 @@
+EWE Go GmbH · Donnerschweer Str. 22-26 · 26123
+EWE Go GmbH
+Oldenburg
+Donnerschweer Str. 22-26
+26123 Oldenburg
+Max Mustermann
+Musterstraße 1
+Tel. +49 441 36152-0
+1010 Wien
+www.ewe-go.de
+info@ewe-go.de
+Rechnung
+Rechnungsnummer	Zahlungsziel	Leistungszeitraum	Kunden-Debitoren-ID	Rechnungsdatum
+R2026-000000	15.05.2026	30.04.2026	100000000	08.05.2026
+Ihre EWE Go Rechnung
+Moin aus Oldenburg!
+Für unsere Leistungen erlauben wir uns folgende Posten zu berechnen:
+Bezeichnung	Menge	Stückpreis	Steuer %	Steuer	Netto
+Ladetarif - EWE Go (in kWh)	134,756	0,436975	19	11,19	58,88
+01.04.2026 bis
+30.04.2026
+Gesamt Netto	58,88
+MwSt. 19% von 58,88 EUR	11,19
+Gesamtbetrag EUR	70,07
+1/2
+EWE Go GmbH	Geschäftsführer: Ilker Akkaya	T: +49 441 36152-0	Bank: Landesbank Hessen-Thüringen
+Donnerschweer Str. 22-26	UStID: DE315640644	info@ewe-go.de	IBAN: DE81 3005 0000 0001 7723 59
+26123 Oldenburg	Amtsgericht Oldenburg, HRB 204287	www.ewe-go.de	BIC:	WELADEDDXXX
+Wir ziehen den Rechnungsbetrag per SEPA Lastschrift von Ihrem Bankkonto mit der IBAN
+****************0000 unter Verwendung der Vertragsnummer ABCD-EFGH ein.
+Die Payone GmbH ist der Kontoinhaber und arbeitet im Auftrag der EWE Go GmbH
+Bei Rückfragen wenden Sie sich bitte an invoice@ewe-go.de
+Wir wünschen Ihnen viel Spaß mit unseren Produkten!
+Herzliche Grüße
+Ihr EWE Go Team
+2/2

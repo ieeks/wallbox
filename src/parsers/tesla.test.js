@@ -20,6 +20,7 @@ describe('Tesla – Erkennung', () => {
       'tesla-de-irschenberg',
       'tesla-de-bernau-theodor-sanne',
       'tesla-de-bernau-hochfellnstrasse',
+      'tesla-it-noventa-di-piave',
     ]) {
       expect(tesla.detect(fixture(name))).toBe(true);
     }
@@ -132,32 +133,16 @@ describe('Tesla – umgebrochene Mengenzelle', () => {
 });
 
 describe('Tesla – Italien', () => {
-  // Synthetisch aus den Zahlen der Spec §4.1 gebaut (0,401581 × 47,7272 =
-  // 19,16 netto, 23,38 brutto bei 22 % IVA) – für Italien liegt keine echte
-  // Rechnung vor, das Layout ist laut Spec identisch.
-  const itRechnung = [
-    'Rechnung',
-    'Tesla Italy S.r.l.',
-    'Via Vittor Pisani 19\tRechnungsnummer\t4030P0000000001',
-    '20124 Milano\tRechnungsdatum\t2026/07/14',
-    'USt-IdNr: IT07024150968\tReferenznummer\tbbbbbbbb-0000-4000-8000-000000000001',
-    'Verkauft an\tLadestation',
-    'Max Mustermann\tNoventa di Piave, Italy',
-    'Event-Datum\tBeschreibung\tAnzahl\tSteuern (%)\tTotal (EUR)',
-    '2026/07/14\tStromgebühr\t0.401581 / kWh\t47.7272 kWh\t22\t19.16',
-    'Teilsumme\t19.16',
-    'Gesamtbetrag (EUR)\t23.38',
-  ].join('\n');
-
   it('erkennt den italienischen Rechtsträger und rechnet mit 22 % IVA', () => {
-    expect(tesla.detect(itRechnung)).toBe(true);
-    const [c] = tesla.parse(itRechnung);
+    const c = single('tesla-it-noventa-di-piave');
     expect(c.provider).toBe('tesla-it');
     expect(c.kwh).toBe(47.7272);
     expect(c.grossTotal).toBe(23.38);
-    expect(c.grossPerKwh).toBeCloseTo(0.49, 2);
+    expect(c.grossPerKwh).toBeCloseTo(0.490, 3);
+    expect(c.vatRate).toBeCloseTo(0.22, 10);
     expect(c.unitPriceBasis).toBe('net');
     expect(c.location).toBe('Noventa di Piave');
+    expect(c.needsReview).toBe(false);
   });
 });
 

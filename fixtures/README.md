@@ -19,23 +19,27 @@ verlieren die Parser die Spaltenstruktur.
 
 ## Vor dem Commit anonymisieren
 
-Rechnungen enthalten Klarnamen, Anschrift, E-Mail und Kundennummer. Ersetzt
-werden: Name → `Max Mustermann`, Anschrift → `Musterstraße 1/2/3` /
-`1010 Wien AT`, E-Mail → `max.mustermann@example.com`, Kundennummer →
-`3000000000`, Rechnungs- und Referenznummer → Dummy-Werte, Ladesäulen-S/N →
-maskiert. Beträge, Mengen, Datum, Ort und Steuersätze bleiben **unverändert** –
-sie sind der Prüfgegenstand.
+Rechnungen enthalten Klarnamen, Anschrift, Kunden- und Vertragsnummern.
+Ersetzt werden: Name → `Max Mustermann`, Anschrift → `Musterstraße 1/2/3` /
+`1010 Wien AT`, E-Mail → `max.mustermann@example.com`, Kunden-, Rechnungs-,
+Referenz- und Vertragsnummern → Dummy-Werte, Ladesäulen-S/N und
+Kartenendziffern → maskiert. Beträge, Mengen, Datum, Ort und Steuersätze
+bleiben **unverändert** – sie sind der Prüfgegenstand.
 
 ## Bestand
 
-| Datei | Besonderheit |
-|---|---|
-| `tesla-at-stpoelten-minutentarif.txt` | Minutentarif, zwei Tarifstufen, **keine kWh** auf der Rechnung |
-| `tesla-de-lindau.txt` | Stückpreis ist **netto** (0.436865 × 35.2512 = Teilsumme 15,40) |
-| `tesla-de-irschenberg.txt` | Stückpreis netto; Mengenzelle **bricht über drei Zeilen um** |
-| `tesla-de-bernau-theodor-sanne.txt` | Stückpreis ist **brutto** (0.47 × 89.2064 = Gesamtbetrag 41,92) |
-| `tesla-de-bernau-hochfellnstrasse.txt` | Stückpreis brutto; zweiter Standort im selben Ort |
+| Datei | Anbieter | Besonderheit |
+|---|---|---|
+| `tesla-at-stpoelten-minutentarif.txt` | Tesla AT | Minutentarif, zwei Tarifstufen, **keine kWh** auf der Rechnung |
+| `tesla-de-lindau.txt` | Tesla DE | Stückpreis **netto** (0.436865 × 35.2512 = Teilsumme 15,40) |
+| `tesla-de-irschenberg.txt` | Tesla DE | Stückpreis netto; Mengenzelle **bricht über drei Zeilen um** |
+| `tesla-de-bernau-theodor-sanne.txt` | Tesla DE | Stückpreis **brutto** (0.47 × 89.2064 = Gesamtbetrag 41,92) |
+| `tesla-de-bernau-hochfellnstrasse.txt` | Tesla DE | Stückpreis brutto; zweiter Standort im selben Ort |
+| `tesla-it-noventa-di-piave.txt` | Tesla IT | 22 % IVA, sonst identisches Layout |
+| `ionity-it-bagnaria-arsa.txt` | IONITY | **Dezimaltrenner-Mix in einer Zeile**; Stückpreis auf 2 Stellen gerundet |
+| `electra-at-villach.txt` | Electra | Stückpreis-Feld ist 0,00 €; Ladeort steht im Zahlungsblock; Rechnungsnummer bricht um |
+| `ewe-go-sammelrechnung.txt` | EWE Go | **Monats-Sammelrechnung**, eine Zeile für einen ganzen Leistungszeitraum |
 
-Fehlen noch: IONITY, Electra, EWE Go. Für Tesla Italy liegt keine echte
-Rechnung vor – der Fall steckt als synthetisches Beispiel in
-`src/parsers/tesla.test.js`.
+Für den Integrationstest über einen kompletten Trip (Spec §10: 264,09 kWh /
+106,44 € bei 1172 km) fehlen noch die beiden Tesla-AT-Rechnungen aus
+Völkermarkt (64,26 kWh / 21,20 € und 68,52 kWh / 22,61 €).

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseDecimal, round, approxEqual } from './num.js';
+import { parseDecimal, decimalsOf, round, approxEqual } from './num.js';
 
 describe('parseDecimal', () => {
   it('liest deutsche Beträge mit Tausenderpunkt', () => {
@@ -66,6 +66,26 @@ describe('parseDecimal', () => {
   it('reicht endliche Zahlen unverändert durch', () => {
     expect(parseDecimal(42.5)).toBe(42.5);
     expect(parseDecimal(0)).toBe(0);
+  });
+});
+
+// Wie genau eine Zahl GEDRUCKT ist, ist nicht dasselbe wie ihr Wert – die
+// Netto/Brutto-Prüfung braucht das, um den Rundungsspielraum zu kennen.
+describe('decimalsOf', () => {
+  it('zählt die gedruckten Nachkommastellen, nicht die signifikanten', () => {
+    expect(decimalsOf('0.80')).toBe(2);
+    expect(decimalsOf('0,436975')).toBe(6);
+    expect(decimalsOf('0.47')).toBe(2);
+    expect(decimalsOf('1.234,56')).toBe(2);
+  });
+
+  it('gibt 0 für ganze Zahlen und reine Gruppierung', () => {
+    expect(decimalsOf('19')).toBe(0);
+    expect(decimalsOf('1.234.567')).toBe(0);
+  });
+
+  it('gibt null, wenn keine Zahl dasteht', () => {
+    expect(decimalsOf('keine Zahl')).toBeNull();
   });
 });
 

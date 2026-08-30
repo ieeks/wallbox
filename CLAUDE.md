@@ -347,6 +347,16 @@ Zeichens (`1.234.567` → 1234567, aber `1.234,567` → 1234.567 und `26,707` �
 26,707). Gibt `null` statt `NaN` zurück, damit niemand versehentlich
 weiterrechnet.
 
+### Toleranz der Netto/Brutto-Prüfung
+
+Die festen ±0,02 € der Spec reichen nur, solange der Stückpreis genau genug
+gedruckt ist. IONITY weist `0.80 EUR/KWH` aus, abgerechnet werden 0,8035 –
+bei 26,707 kWh sind das 9 Cent Abweichung, und jede IONITY-Rechnung wäre
+fälschlich prüfbedürftig. `priceTolerance()` skaliert deshalb mit der Menge
+und der gedruckten Genauigkeit (`Menge × 0,5 × 10⁻ⁿ`, mindestens 0,02 €).
+`decimalsOf()` in `num.js` liefert das n – die *gedruckten* Nachkommastellen,
+nicht die signifikanten.
+
 ### Parser-Interface
 
 `{ id, label, detect(text) -> boolean, parse(text) -> Charge[] }`, registriert
@@ -358,6 +368,34 @@ dieselbe Rechnung zweimal eingelesen nicht doppelt zählt (Edge Case 7).
 Eine Tesla-Rechnung deckt einen Ladestopp ab; mehrere Positionszeilen sind
 Tarifstufen derselben Session und werden nach Event-Datum zusammengefasst
 (Minutentarif: „Stufe 2" 1 min + „Stufe 3" 11 min = 12 min / 11,40 €).
+
+`buildCharge()` in `charge.js` hält die Feldliste an einer Stelle und setzt
+die Regeln durch, die für alle Anbieter gelten (`grossPerKwh` immer aus
+`grossTotal / kwh`, fehlende Menge bleibt `null` + `estimated`).
+`toIsoDate()` parst `TT/MM/JJJJ` bewusst selbst – `new Date('10/07/2026')`
+läse daraus den 7. Oktober statt den 10. Juli.
+
+### Die anderen drei Anbieter
+
+**IONITY** (italienische Niederlassung): eine Positionszeile je Session,
+`<Ort> <TT/MM/JJJJ>: 0.80 EUR/KWH ⇥ 26,707 KWH ⇥ 3,87 EUR (22,00 %) ⇥ 17,59 EUR`.
+Der Betrag der Zeile ist netto, die Steuer steht daneben – brutto entsteht als
+Summe der beiden, **nicht** über den Satz gerechnet, sonst geht die Cent-Rundung
+der Rechnung verloren.
+
+**Electra**: Label und Wert auf derselben Zeile, Übersetzung in der nächsten.
+Die Betragsspalte ist laut Kopf „Preis (inkl. Steuern)", also brutto. Das
+Stückpreis-Feld ist 0,00 € und damit unbrauchbar – hier gibt es nichts zu
+verifizieren (`unitPriceBasis: 'unknown'` ist der Normalfall, kein Mangel).
+Der Ladeort steht nicht im Kopf, sondern unten im Zahlungsblock in der Zeile
+nach `<Datum> à <Uhrzeit> - <Dauer>`. Die Rechnungsnummer bricht um.
+
+**EWE Go**: Monats-Sammelrechnung, eine Zeile für einen ganzen Leistungs-
+zeitraum. Daraus ist nicht ableitbar, welche Ladung wann und wo war, und eine
+Monatsrechnung enthält regelmässig Ladungen ausserhalb des Trips (Edge Case 3).
+Deshalb genau **eine** Charge mit `isAggregate: true`; `grossPerKwh` ist hier
+nicht nur Anzeige, sondern der Umrechnungssatz, mit dem das Split-UI die kWh
+der Einzelsessions zurückrechnet.
 
 **Minutentarif:** `kwh: null` und `estimated: true` – nie `0`. Die Rechnung
 nennt keine kWh, geschätzt wird im UI, nicht im Parser (gleiche Logik wie beim

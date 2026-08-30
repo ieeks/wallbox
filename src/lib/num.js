@@ -43,8 +43,13 @@ function isGrouped(part) {
 // ohne ihn liest „1.234,567" als 1234567. Gemischte Trenner sind nie beide
 // Gruppentrenner.
 // =====================================================================
-export function parseDecimal(raw) {
-  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : null;
+function analyzeDecimal(raw) {
+  if (typeof raw === 'number') {
+    if (!Number.isFinite(raw)) return null;
+    const s = String(raw);
+    const dot = s.indexOf('.');
+    return { value: raw, decimals: dot === -1 ? 0 : s.length - dot - 1 };
+  }
   if (typeof raw !== 'string') return null;
 
   const match = raw
@@ -59,7 +64,7 @@ export function parseDecimal(raw) {
   const seps = body.match(/[.,]/g);
   if (!seps) {
     const n = Number(body);
-    return Number.isFinite(n) ? sign * n : null;
+    return Number.isFinite(n) ? { value: sign * n, decimals: 0 } : null;
   }
 
   const lastIdx = Math.max(body.lastIndexOf('.'), body.lastIndexOf(','));
@@ -73,7 +78,20 @@ export function parseDecimal(raw) {
   if (!isGrouped(intPart)) return null;
 
   const n = Number(intPart.replace(/[.,]/g, '') + (fracPart ? '.' + fracPart : ''));
-  return Number.isFinite(n) ? sign * n : null;
+  return Number.isFinite(n) ? { value: sign * n, decimals: fracPart.length } : null;
+}
+
+export function parseDecimal(raw) {
+  const a = analyzeDecimal(raw);
+  return a ? a.value : null;
+}
+
+// Wie genau ist die Zahl GEDRUCKT? Nicht dasselbe wie ihr Wert: „0.80" hat
+// zwei Nachkommastellen, „0,436975" sechs. Braucht die Netto/Brutto-Prüfung,
+// um zu wissen, wie viel Rundungsfehler ein Stückpreis tragen kann.
+export function decimalsOf(raw) {
+  const a = analyzeDecimal(raw);
+  return a ? a.decimals : null;
 }
 
 // Auf `digits` Nachkommastellen runden (kaufmännisch, ohne Float-Artefakte

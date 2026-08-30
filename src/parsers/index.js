@@ -7,8 +7,11 @@
 // mit manueller Eingabemaske (und optional dem Claude-Fallback aus §7).
 // =====================================================================
 import tesla from './tesla.js';
+import ionity from './ionity.js';
+import electra from './electra.js';
+import ewego from './ewego.js';
 
-export const PARSERS = [tesla];
+export const PARSERS = [tesla, ionity, electra, ewego];
 
 export function detectParser(text, parsers = PARSERS) {
   if (typeof text !== 'string' || !text.trim()) return null;

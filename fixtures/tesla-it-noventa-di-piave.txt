@@ -1,0 +1,26 @@
+Rech nu ng
+Tesla Italy S.r.L.
+Via Vincenzo Bellini 1	Rechnungsnummer	4060P0000000006
+20009 Vittuone	Rechnungsdatum	2026/07/14
+USt-IdNr: IT07024150968	Referenznummer	aaaaaaaa-0000-4000-8000-000000000006
+www.tesla.com	Kundennummer	3000000000
+Verkauft an	Ladestation
+Max Mustermann	Noventa di Piave, Italy
+Musterstraße 1/2/3	Via Rialto 13
+1010 Wien AT	30020 Noventa di Piave IT
+max.mustermann@example.com	S/N: GF00000000000XXX - 3 / 250 kW DC
+Preis/Einheit
+Event-Datum	Beschreibung	Anzahl	Steuern (%)	Total (EUR)
+(EUR)
+2026/07/14	Stromgebühr	0.401581 / kWh	47.7272 kWh	22	19.16
+Teilsumme	19.16
+Gesamtsumme Steuern	4.22
+Gesamtbetrag (EUR)	23.38
+Zahlung fällig	23.38
+Steuerpflichtiger
+Code	Steuern (%)	Steuerbetrag (EUR)	Beschreibung
+Gesamtbetrag (EUR)
+Örtlicher MwSt.
+ITSR	19.16	22.00	4.22
+Standardsatz
+Tesla Italy S.R.L., Codice Fiscale 07024150968, REA: MI-1930145, Via Vincenzo Bellini 1, 20009 Vittuone, Italia

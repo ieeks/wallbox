@@ -1,0 +1,28 @@
+Fattura
+Data della fattura:	10.07.2026
+Numero di fattura:	A-IT-2026-000000000
+Numero cliente:	ION-1000000000
+Numero d'ordine:	IOYAPP0000000000
+IONITY GmbH, Italian branch | Corso Italia 22 | 20122 Milan
+Max -
+Vuoi altri dettagli?
+Visita il nostro sito Web:
+https://support.ionity.eu/it
+IONITY GmbH, Italian branch Fattura
+Dettagli della fattura - descrizione del servizio
+Descrizione	Quantità	IVA	Importo
+Bagnaria Arsa 10/07/2026: 0.80 EUR/KWH	26,707 KWH	3,87 EUR (22,00 %)	17,59 EUR
+Somma dei singoli importi IVA esculsa	17,59 EUR
+IVA sui signoli importi (22,00 %)	3,87 EUR
+Importo totale della fattura	21,46 EUR
+Grazie per la fiducia e per aver utilizzato IONITY GmbH, Italian branch.
+L'importo della fattura è stato addebitato utilizzando l'opzione di pagamento selezionata. In caso di inconvenienti, vi contatteremo.
+Nota:
+Hai diritto a contestare qualsiasi voce di questa fattura. Sottoponici le tue obiezioni per iscritto all'indirizzo indicato sotto. Le obiezioni devono pervenire a support@ionity.eu entro 8 settimane
+dall'emissione della fattura; trascorso tale periodo, la fattura si riterrà accettata in ogni sua parte. Tuttavia, la contestazione potrebbe essere ritenuta valida anche dopo tale periodo qualora
+risultasse evidente la sua legittimità. Se non vuoi che conserviamo i tuoi dati personali e se vi sono dati la cui conservazione non è richiesta per legge, puoi contattarci e richiedere l'eliminazione dei
+tuoi dati personali dai nostri sistemi. Tieni presente che la conservazione di certi dati per un determinato periodo di tempo è un requisito legale.
+IONITY GmbH, Italian branch | Corso Italia 22 | 20122 Milan
+Registro delle imprese:REA: MI -2531487 | Partita IVA: IT10435860969
+Direzione esecutiva: Jeroen van Tilburg (CEO), Torsten Kiedel (CFO)
+1 of 1
