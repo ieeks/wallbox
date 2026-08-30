@@ -18,7 +18,7 @@ sehen Nutzer nach einem Deploy noch die alte Version.
 
 ---
 
-## Aktuelle Version: 1.15.0
+## Aktuelle Version: 1.16.0
 
 ---
 
@@ -287,3 +287,237 @@ bewusst ein Median der günstigsten Stationen, kein Wien-Durchschnitt.
 - `comp_benzin_verbrauch_l`, `comp_ev_verbrauch_kwh`, `comp_benzin_preis`
 
 Alle mit Defaults im settings-Merge-Block gesichert (NaN-safe).
+
+---
+
+## Trip-Reports (`src/`, ab v1.16.0)
+
+Reise-Reports aus Ladebelegen. Neue Teile liegen als **ES-Module unter `src/`**
+und werden von `index.html` als zweites, eigenes `<script type="module">`
+geladen. `script.js` bleibt ein klassisches Script und wird **nicht** umgebaut –
+die Module greifen über die globalen Funktionen darauf zu (`calcTotal`,
+`energyPriceFor`, `benzinPreis`, `fmt`, …). Kein Build-Schritt: GitHub Pages
+liefert `src/` unverändert aus. Die `package.json` im Root ist reine
+Entwicklungsinfrastruktur (Vitest, pdf.js für das Fixture-Werkzeug).
+
+**pdf.js** kommt per Dynamic Import von jsDelivr, erst beim Öffnen der
+Trip-Ansicht (`src/lib/pdf.js`). Version ist in `PDFJS_VERSION` gepinnt. Der
+Start des Ladefuchs wird dadurch nicht langsamer.
+
+### Textextraktion (`itemsToLines`)
+
+`getTextContent()` liefert Fragmente mit Position, keine Zeilen. Ein
+`items.map(i => i.str).join(' ')` zerstört die Tabellenstruktur, an der alle
+Parser hängen. Stattdessen: nach Y-Koordinate zu Zeilen bündeln (PDF-Ursprung
+unten links → absteigend), innerhalb der Zeile nach X sortieren, und beim
+Zusammenfügen die Lücke bewerten – **grosse Lücke = `\t` (Spalte)**, kleine =
+Leerzeichen. Die Schwelle hängt an der Schrifthöhe, nicht an einem absoluten
+Wert, sonst kippt sie mit der Schriftgrösse.
+
+Ohne Textebene (Scan) wird abgebrochen statt geraten – kein OCR (Edge Case 9).
+
+### Netto oder brutto? (`src/parsers/verify.js`)
+
+**Die Spec-Tabelle in §4.1 ordnet das dem Aussteller zu. Das stimmt nicht.**
+In den vorliegenden Rechnungen ist `Preis/Einheit` bei *Tesla Germany* mal
+netto (Lindau `0.436865 × 35.2512 = 15,40` = Teilsumme), mal brutto (Bernau
+`0.47 × 89.2064 = 41,92` = Gesamtbetrag) – gleicher Rechtsträger, gleiches
+Layout, teils derselbe Monat. Es gibt also keine Regel pro Anbieter, an der
+man sich festhalten könnte.
+
+Verlässlich ist stattdessen die Spalte **`Total (EUR)` der Positionszeile: sie
+ist netto** und summiert sich zur Teilsumme, nie zum Gesamtbetrag. Der
+Bruttobetrag entsteht daraus über den Steuersatz derselben Zeile, gegengeprüft
+gegen den ausgewiesenen Gesamtbetrag (±0,02 €). Die Netto/Brutto-Einordnung des
+Stückpreises läuft weiter mit (`unitPriceBasis`), aber nur noch als Kontrolle:
+passt der Stückpreis zu keiner der beiden Summen, wird die Zeile mit
+`needsReview` markiert statt still geraten.
+
+Angezeigt wird immer `grossTotal / kwh` – die einzige über alle Anbieter
+vergleichbare Zahl.
+
+### Zahlen (`src/lib/num.js`)
+
+`parseDecimal()` steht **neben** `parseNum()` aus dem CSV-Import, ersetzt es
+nicht. `parseNum()` setzt voraus, dass in einer Datei entweder Komma oder Punkt
+der Dezimaltrenner ist; für Rechnungen gilt das nicht (IONITY mischt beides in
+einer Zeile). Heuristik: das letzte Trennzeichen ist der Dezimalpunkt, ausser es
+folgen exakt drei Ziffern **und** es gibt ein weiteres Trennzeichen desselben
+Zeichens (`1.234.567` → 1234567, aber `1.234,567` → 1234.567 und `26,707` →
+26,707). Gibt `null` statt `NaN` zurück, damit niemand versehentlich
+weiterrechnet.
+
+### Toleranz der Netto/Brutto-Prüfung
+
+Die festen ±0,02 € der Spec reichen nur, solange der Stückpreis genau genug
+gedruckt ist. IONITY weist `0.80 EUR/KWH` aus, abgerechnet werden 0,8035 –
+bei 26,707 kWh sind das 9 Cent Abweichung, und jede IONITY-Rechnung wäre
+fälschlich prüfbedürftig. `priceTolerance()` skaliert deshalb mit der Menge
+und der gedruckten Genauigkeit (`Menge × 0,5 × 10⁻ⁿ`, mindestens 0,02 €).
+`decimalsOf()` in `num.js` liefert das n – die *gedruckten* Nachkommastellen,
+nicht die signifikanten.
+
+### Parser-Interface
+
+`{ id, label, detect(text) -> boolean, parse(text) -> Charge[] }`, registriert
+in `src/parsers/index.js`. `parseInvoiceText()` wirft nie – eine kaputte Datei
+darf einen Mehrfach-Import nicht abbrechen, sie geht als `unrecognized` durch.
+Die Charge-`id` ist deterministisch (`anbieter:rechnungsnummer:datum`), damit
+dieselbe Rechnung zweimal eingelesen nicht doppelt zählt (Edge Case 7).
+
+Eine Tesla-Rechnung deckt einen Ladestopp ab; mehrere Positionszeilen sind
+Tarifstufen derselben Session und werden nach Event-Datum zusammengefasst
+(Minutentarif: „Stufe 2" 1 min + „Stufe 3" 11 min = 12 min / 11,40 €).
+
+`buildCharge()` in `charge.js` hält die Feldliste an einer Stelle und setzt
+die Regeln durch, die für alle Anbieter gelten (`grossPerKwh` immer aus
+`grossTotal / kwh`, fehlende Menge bleibt `null` + `estimated`).
+`toIsoDate()` parst `TT/MM/JJJJ` bewusst selbst – `new Date('10/07/2026')`
+läse daraus den 7. Oktober statt den 10. Juli.
+
+### Die anderen drei Anbieter
+
+**IONITY** (italienische Niederlassung): eine Positionszeile je Session,
+`<Ort> <TT/MM/JJJJ>: 0.80 EUR/KWH ⇥ 26,707 KWH ⇥ 3,87 EUR (22,00 %) ⇥ 17,59 EUR`.
+Der Betrag der Zeile ist netto, die Steuer steht daneben – brutto entsteht als
+Summe der beiden, **nicht** über den Satz gerechnet, sonst geht die Cent-Rundung
+der Rechnung verloren.
+
+**Electra**: Label und Wert auf derselben Zeile, Übersetzung in der nächsten.
+Die Betragsspalte ist laut Kopf „Preis (inkl. Steuern)", also brutto. Das
+Stückpreis-Feld ist 0,00 € und damit unbrauchbar – hier gibt es nichts zu
+verifizieren (`unitPriceBasis: 'unknown'` ist der Normalfall, kein Mangel).
+Der Ladeort steht nicht im Kopf, sondern unten im Zahlungsblock in der Zeile
+nach `<Datum> à <Uhrzeit> - <Dauer>`. Die Rechnungsnummer bricht um.
+
+**EWE Go**: Monats-Sammelrechnung, eine Zeile für einen ganzen Leistungs-
+zeitraum. Daraus ist nicht ableitbar, welche Ladung wann und wo war, und eine
+Monatsrechnung enthält regelmässig Ladungen ausserhalb des Trips (Edge Case 3).
+Deshalb genau **eine** Charge mit `isAggregate: true`; `grossPerKwh` ist hier
+nicht nur Anzeige, sondern der Umrechnungssatz, mit dem das Split-UI die kWh
+der Einzelsessions zurückrechnet.
+
+**Minutentarif:** `kwh: null` und `estimated: true` – nie `0`. Die Rechnung
+nennt keine kWh, geschätzt wird im UI, nicht im Parser (gleiche Logik wie beim
+`maxKw`-Peak-Tracker: fehlender Messwert ist nicht null).
+
+### Tests
+
+`npm test` (Vitest). Fixtures in `fixtures/` sind anonymisierte Textextrakte
+echter Rechnungen, erzeugt über `npm run dump-pdf` – dasselbe `itemsToLines()`
+wie zur Laufzeit, damit Fixture und Browser nicht auseinanderlaufen.
+
+---
+
+## Trip-Ansicht (`src/trips/`, ab v1.16.0)
+
+Vierter Nav-Eintrag „Trips" mit zwei Seiten: `page-trips` (Liste) und
+`page-trip-detail` (Report). Beide stehen leer in `index.html` und werden per
+`innerHTML` gefüllt – dasselbe Muster wie `page-detail`.
+
+**Die Brücke (`window.lfBridge`).** `charges`, `settings`, `db`,
+`firebaseReady`, `HOUSEHOLD_DOC` und `fmt` sind in `script.js` mit
+`let`/`const` deklariert und liegen deshalb **nicht** auf `window` – anders
+als Funktionsdeklarationen wie `calcTotal` oder `showToast`. Ein Inline-Script
+in `index.html` reicht sie als **Getter** durch (keine Kopien: `loadFromCloud()`
+weist `charges` neu zu). `script.js` selbst bleibt unangetastet.
+
+**Persistenz (`store.js`).** Sub-Collection `haushalte/haushalt/trips`, ein
+Dokument je Trip, plus localStorage-Spiegel (`lf_trips`). Ausdrücklich **kein**
+Feld am Haushalt-Dokument: `syncToCloud()` schreibt dort mit `.set()` ohne
+`{merge:true}` und würde es beim nächsten Nutzer-Sync löschen. Sub-Collections
+sind davon nicht betroffen – der Preis ist, dass Laden und Schreiben hier
+eigenständig passieren, nicht über `persist()`. Geladen wird erst beim Öffnen
+der Trip-Ansicht. Vor dem Schreiben geht alles durch `JSON.parse(JSON.stringify())`:
+Firestore lehnt `undefined` ab.
+
+**Heimladungen werden referenziert, nie kopiert** (Spec §5): der Trip hält nur
+`homeChargeIds`, die Ladung bleibt in `charges[]`. Sonst zeigt das Dashboard
+andere Zahlen als der Report. Eine von Hand geänderte Fahrtrichtung liegt
+deshalb in `trip.homeLegs`, nicht am Bestandseintrag.
+
+**Aggregation (`calc.js`)** ist frei von Globals – alles kommt als Argument,
+damit die Rechnung ohne Browser testbar ist. Der Integrationstest fährt den
+Caorle-Trip aus §10 durch: 264,09 kWh / 106,44 € / 22,5 kWh/100km.
+
+**Verbrenner-Vergleich als Spanne**, nie als Punktwert – es ist eine Schätzung.
+Untergrenze ist `comp_benzin_verbrauch_l` (der Wert, mit dem auch das Dashboard
+rechnet), Obergrenze das neue `comp_benzin_verbrauch_l_max` (Default 9,5).
+Zwei Felder, weil der Alltagsverbrauch nicht der Langstreckenverbrauch ist.
+
+**Minutentarif:** `kwh` bleibt `null`, `effectiveKwh()` fällt auf einen im UI
+gesetzten `kwhEstimate` zurück. Vorschlag ist Dauer × `DEFAULT_ESTIMATE_KW`
+(90 kW). Geschätzte Werte tragen im Report ein Badge und ein `*` an den Summen.
+
+**Edge Cases im UI:** Rechnung ausserhalb des Reisezeitraums wird nachgefragt
+statt still zugeordnet (8, Toleranz ein Tag je Seite – die Heimladung am
+Vorabend ist normal); doppelt abgelegte Rechnungen fallen über die
+deterministische Charge-`id` raus (7); eine fehlende Heimladung und eine noch
+nicht aufgeteilte Sammelrechnung erscheinen als Warnung im Report (5, 3).
+
+### Sammelrechnung aufteilen (Spec §8)
+
+Der „aufteilen"-Knopf an einer `isAggregate`-Zeile öffnet eine Maske, in die
+die Einzelsessions aus der Anbieter-App kommen (Datum, Ort, **Betrag**). Die
+kWh rechnet `splitAggregate()` über `grossPerKwh` der Sammelrechnung zurück –
+nicht andersherum, denn die App nennt Beträge, keine Mengen.
+
+- Die Prüfsumme ist **keine harte Bedingung**: unvollständig ist ausdrücklich
+  erlaubt und der Normalfall (eine Monatsrechnung enthält Ladungen ausserhalb
+  der Reise, Edge Case 3). Nur *mehr* als der Rechnungsbetrag wird abgelehnt –
+  das ist ein Tippfehler.
+- Das Original landet in `trip.splitAggregates`, wird also nicht weggeworfen.
+  Zwei Gründe: „Aufteilung zurücknehmen" braucht es, und ohne den Eintrag
+  legte ein erneutes Ablegen derselben PDF die Sammelrechnung neben ihren
+  Splits noch einmal an – der Dedup-Check im Import prüft beide Mengen.
+- Die Zeilen werden aus dem DOM gelesen (`readSplitRows()`), nicht in einer
+  Modul-Variable gespiegelt – dasselbe Muster wie `readTariffRows()`.
+
+### Ladung von Hand (Spec §4)
+
+Ein PDF, das kein Parser liest, landet nicht im Nichts: die unerkannten
+Dateien bekommen einen eigenen Bereich unter der Drop-Zone, je Datei einen
+Knopf „eintragen", der die Eingabemaske mit dem Dateinamen vorbelegt. Ohne
+den käme eine Rechnung von einem unbekannten Anbieter überhaupt nicht in
+einen Trip – optional ist laut Spec nur der Claude-Fallback, nicht die Maske.
+
+Dieselbe Maske korrigiert auch geparste Zeilen (`bearbeiten`), etwa wenn eine
+Zeile `needsReview` trägt. Handeinträge bekommen `provider: 'manuell'` und eine
+zeitstempelbasierte `id` – es gibt keine Rechnung, die doppelt eingelesen
+werden könnte, also braucht es keine deterministische.
+
+Der Import-Bericht (übernommen / Duplikate / unerkannt) liegt in einer
+Modul-Variable von `ui.js`, nicht im DOM: `renderTripDetail()` baut die Seite
+neu auf, und die „eintragen"-Knöpfe müssen das überstehen.
+
+### Trips im Vergleich (Spec §9)
+
+Unter der Trip-Liste, aufklappbar über `sectionShell()` aus `script.js` (gleiche
+Optik und dieselbe Zuklapp-Persistenz wie die Dashboard-Sektionen).
+
+- **Zwei getrennte Diagramme, keine zweite Y-Achse.** Verbrauch (kWh/100km)
+  und Ø-Preis (€/kWh) haben nichts miteinander zu tun; eine gemeinsame Skala
+  würde eine Beziehung suggerieren, die es nicht gibt.
+- Je Diagramm **eine** Datenreihe, deshalb keine Legende – der Titel benennt
+  sie. Werte stehen direkt an den Balken (bei so wenigen Trips lesbarer als
+  ein Tooltip), Details zusätzlich am `title`.
+- Balken sind auf 52 px begrenzt: bei drei Trips würde ein Balken über die
+  volle Spalte 120 px breit und wirkt dann wie eine Fläche, nicht wie ein
+  Messwert.
+- Darunter dieselben Zahlen als Tabelle – lesbar auch ohne Farbe und ohne
+  Balkenlängen.
+- Zeitachse chronologisch, älteste links. `getTrips()` sortiert für die Liste
+  absteigend und wird hier umgedreht.
+- Trips ohne Kilometer haben keinen Verbrauch: Stummel-Balken und `—`, nicht 0.
+- Beschriftet wird mit `trip.title` vor `trip.to` – zwei Reisen zum selben Ziel
+  („Markdorf I" / „Markdorf II") wären sonst nicht auseinanderzuhalten.
+
+Der Dark-Mode-`--primary` (#F59E0B) liegt knapp ausserhalb des empfohlenen
+Helligkeitsbands für Diagrammfarben, besteht die Kontrastprüfung aber. Das ist
+ein Bestands-Token, das überall in der App steckt – dafür wird das Theme nicht
+umgebaut.
+
+**km-Rückrechnung** wird mit ihrem Plausibilitätsband ausgewiesen
+(`~976 km (geschätzt, 927–1 024)`), nicht als scheinbar exakte Zahl.
+
+**Noch offen:** Claude-Fallback (§7, laut Spec optional).

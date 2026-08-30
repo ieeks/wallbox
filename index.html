@@ -8,7 +8,7 @@
 <title>Wallbox – E-Auto Lade Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="./styles.css?v=1.15.0"/>
+<link rel="stylesheet" href="./styles.css?v=1.16.0"/>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 </head>
@@ -227,6 +227,10 @@
     </div>
   </div>
 
+  <!-- ==================== TRIPS ==================== -->
+  <div class="page" id="page-trips"></div>
+  <div class="page" id="page-trip-detail"></div>
+
 </main>
 
 <!-- BOTTOM NAV -->
@@ -242,6 +246,10 @@
   <button class="nav-item" onclick="showPage('add',this)" data-page="add">
     <span class="material-symbols-outlined">add_circle</span>
     <span>Hinzufügen</span>
+  </button>
+  <button class="nav-item" onclick="tripsOpenList()" data-page="trips">
+    <span class="material-symbols-outlined">luggage</span>
+    <span>Trips</span>
   </button>
 </nav>
 
@@ -335,8 +343,12 @@
     </div>
     <div class="settings-section-title" style="margin-top:16px;font-weight:600;font-size:13px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.5px;">Benzin-Vergleich</div>
     <div class="setting-row">
-      <div class="setting-label">Benzinverbrauch Tiguan<small>L/100km</small></div>
+      <div class="setting-label">Benzinverbrauch Tiguan<small>L/100km – Untergrenze</small></div>
       <div class="setting-input"><input type="number" id="set-benzin-l" step="0.1" min="0" inputmode="decimal"/></div>
+    </div>
+    <div class="setting-row">
+      <div class="setting-label">Benzinverbrauch Langstrecke<small>L/100km – Obergrenze, nur für Trip-Reports</small></div>
+      <div class="setting-input"><input type="number" id="set-benzin-l-max" step="0.1" min="0" inputmode="decimal"/></div>
     </div>
     <div class="setting-row">
       <div class="setting-label">BYD Verbrauch<small>kWh/100km</small></div>
@@ -373,6 +385,148 @@
   </div>
 </div>
 
-<script src="./script.js?v=1.15.0"></script>
+<!-- TRIP FORM MODAL -->
+<div class="modal-overlay" id="trip-form" onclick="if(event.target===this)tripCloseForm()">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <h3 id="trip-form-title">Neuer Trip</h3>
+    <input type="hidden" id="trip-f-id"/>
+    <label class="input-label">Titel</label>
+    <div class="input-card">
+      <span class="material-symbols-outlined ic-icon">luggage</span>
+      <input type="text" id="trip-f-title" placeholder="Wien ↔ Caorle"/>
+    </div>
+    <label class="input-label">Von</label>
+    <div class="input-card">
+      <span class="material-symbols-outlined ic-icon">home</span>
+      <input type="text" id="trip-f-from" placeholder="Wien"/>
+    </div>
+    <label class="input-label">Nach</label>
+    <div class="input-card">
+      <span class="material-symbols-outlined ic-icon">place</span>
+      <input type="text" id="trip-f-to" placeholder="Caorle"/>
+    </div>
+    <label class="input-label">Abreise</label>
+    <div class="input-card date-input-wrap">
+      <span class="material-symbols-outlined ic-icon">calendar_today</span>
+      <input type="date" id="trip-f-start" style="color:var(--text);font-family:Inter;font-size:14px;"/>
+    </div>
+    <label class="input-label">Rückkehr</label>
+    <div class="input-card date-input-wrap">
+      <span class="material-symbols-outlined ic-icon">calendar_today</span>
+      <input type="date" id="trip-f-end" style="color:var(--text);font-family:Inter;font-size:14px;"/>
+    </div>
+    <label class="input-label">Kilometer (Trip B Bordcomputer)</label>
+    <div class="input-card">
+      <span class="material-symbols-outlined ic-icon">route</span>
+      <input type="number" id="trip-f-km" step="1" min="0" inputmode="numeric" placeholder="leer = aus Verbrauch schätzen"/>
+      <span class="ic-unit">km</span>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:20px;">
+      <button class="ip-btn-cancel" style="flex:1;padding:16px;border:none;border-radius:12px;font-family:Inter;font-weight:600;font-size:14px;cursor:pointer;background:var(--surface-highest);color:var(--text);" onclick="tripCloseForm()">Abbrechen</button>
+      <button class="btn-save" style="flex:2;margin-top:0;" onclick="tripSaveForm()">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<!-- LADUNG VON HAND EINTRAGEN / KORRIGIEREN -->
+<div class="modal-overlay" id="trip-charge-form" onclick="if(event.target===this)tripCloseChargeForm()">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <h3 id="charge-form-title">Ladung eintragen</h3>
+    <div class="setting-hint" id="charge-form-hint"></div>
+    <input type="hidden" id="cf-id"/>
+    <label class="input-label">Datum</label>
+    <div class="input-card date-input-wrap">
+      <span class="material-symbols-outlined ic-icon">calendar_today</span>
+      <input type="date" id="cf-date" style="color:var(--text);font-family:Inter;font-size:14px;"/>
+    </div>
+    <label class="input-label">Ort</label>
+    <div class="input-card">
+      <span class="material-symbols-outlined ic-icon">place</span>
+      <input type="text" id="cf-location" placeholder="z. B. Völkermarkt"/>
+    </div>
+    <label class="input-label">Anbieter</label>
+    <div class="input-card">
+      <span class="material-symbols-outlined ic-icon">ev_station</span>
+      <select id="cf-provider" style="flex:1;border:none;background:transparent;color:var(--text);font-family:Inter;font-size:14px;outline:none;">
+        <option value="manuell">Anderer Anbieter</option>
+        <option value="tesla-at">Tesla AT</option>
+        <option value="tesla-de">Tesla DE</option>
+        <option value="tesla-it">Tesla IT</option>
+        <option value="ionity">IONITY</option>
+        <option value="electra">Electra</option>
+        <option value="ewe-go">EWE Go</option>
+      </select>
+    </div>
+    <label class="input-label">Geladene Energie <span style="color:var(--text-muted);font-weight:400;">– leer lassen, wenn die Rechnung keine nennt</span></label>
+    <div class="input-card">
+      <span class="material-symbols-outlined ic-icon">bolt</span>
+      <input type="number" id="cf-kwh" step="0.001" min="0" inputmode="decimal" placeholder="0,000"/>
+      <span class="ic-unit">kWh</span>
+    </div>
+    <label class="input-label">Rechnungsbetrag (brutto)</label>
+    <div class="input-card">
+      <span class="material-symbols-outlined ic-icon">euro_symbol</span>
+      <input type="number" id="cf-gross" step="0.01" min="0" inputmode="decimal" placeholder="0,00"/>
+      <span class="ic-unit">€</span>
+    </div>
+    <label class="input-label">Steuersatz <span style="color:var(--text-muted);font-weight:400;">– optional, für den Nettobetrag</span></label>
+    <div class="input-card">
+      <span class="material-symbols-outlined ic-icon">percent</span>
+      <input type="number" id="cf-vat" step="1" min="0" max="30" inputmode="decimal" placeholder="20"/>
+      <span class="ic-unit">%</span>
+    </div>
+    <label class="input-label">Fahrtabschnitt</label>
+    <div class="input-card">
+      <span class="material-symbols-outlined ic-icon">route</span>
+      <select id="cf-leg" style="flex:1;border:none;background:transparent;color:var(--text);font-family:Inter;font-size:14px;outline:none;">
+        <option value="outbound">Hinfahrt</option>
+        <option value="onsite">Vor Ort</option>
+        <option value="return">Rückfahrt</option>
+      </select>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:20px;">
+      <button class="ip-btn-cancel" style="flex:1;padding:16px;border:none;border-radius:12px;font-family:Inter;font-weight:600;font-size:14px;cursor:pointer;background:var(--surface-highest);color:var(--text);" onclick="tripCloseChargeForm()">Abbrechen</button>
+      <button class="btn-save" style="flex:2;margin-top:0;" onclick="tripSaveCharge()">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<!-- SPLIT MODAL – Sammelrechnung auf Einzelsessions aufteilen -->
+<div class="modal-overlay" id="trip-split" onclick="if(event.target===this)tripCloseSplit()">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <h3>Sammelrechnung aufteilen</h3>
+    <div class="setting-hint" id="split-info"></div>
+    <div id="split-rows"></div>
+    <button type="button" class="tariff-add-btn" onclick="tripAddSplitRow()">+ Ladevorgang hinzufügen</button>
+    <div class="split-check" id="split-check"></div>
+    <div style="display:flex;gap:10px;margin-top:20px;">
+      <button class="ip-btn-cancel" style="flex:1;padding:16px;border:none;border-radius:12px;font-family:Inter;font-weight:600;font-size:14px;cursor:pointer;background:var(--surface-highest);color:var(--text);" onclick="tripCloseSplit()">Abbrechen</button>
+      <button class="btn-save" style="flex:2;margin-top:0;" onclick="tripApplySplit()">Übernehmen</button>
+    </div>
+  </div>
+</div>
+
+<script src="./script.js?v=1.16.0"></script>
+
+<!-- Brücke zu script.js: `charges`, `settings`, `db` & Co. sind dort mit
+     let/const deklariert und liegen deshalb nicht auf `window`. Getter statt
+     Kopien, damit die Module immer den aktuellen Stand sehen (loadFromCloud
+     weist `charges` neu zu). script.js selbst bleibt unangetastet. -->
+<script>
+  window.lfBridge = {
+    get db()             { return db; },
+    get firebaseReady()  { return firebaseReady; },
+    get HOUSEHOLD_DOC()  { return HOUSEHOLD_DOC; },
+    get charges()        { return charges; },
+    get settings()       { return settings; },
+    get fmt()            { return fmt; },
+    benzinPreis, calcTotal, energyPriceFor, isSnap, localDateStr,
+  };
+</script>
+
+<script type="module" src="./src/trips/index.js?v=1.16.0"></script>
 </body>
 </html>

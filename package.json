@@ -1,0 +1,15 @@
+{
+  "name": "wallbox-trips",
+  "private": true,
+  "type": "module",
+  "description": "Dev-Abhängigkeiten für die Trip-Report-Module (src/). Die App selbst braucht keinen Build – index.html lädt script.js und src/ direkt.",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "dump-pdf": "node tools/dump-pdf.mjs"
+  },
+  "devDependencies": {
+    "pdfjs-dist": "6.3.289",
+    "vitest": "^2.1.8"
+  }
+}
