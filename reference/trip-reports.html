@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Trip-Reports · BYD Seal U</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#13171B; --muted:#5B6670; --faint:#8B949C;
+    --bg:#F2F5F4; --card:#FFFFFF; --line:#E4E9E7;
+    --charge:#00B36A; --charge-d:#00935A;
+    --home:#2F7DD1; --home-bg:#EAF2FB;
+    --tig:#C0463A; --tig-bg:#FBEAE8;
+    --shadow:0 1px 2px rgba(16,24,20,.04),0 8px 24px rgba(16,24,20,.05);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--ink);line-height:1.5;padding:18px 16px 60px;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:680px;margin:0 auto}
+
+  /* Switch */
+  .switch{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;background:#E4E9E7;border-radius:14px;padding:4px;margin-bottom:16px}
+  .switch button{
+    font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:13px;
+    border:0;background:transparent;color:var(--muted);padding:11px 4px;border-radius:11px;
+    cursor:pointer;transition:all .18s ease;line-height:1.25;
+  }
+  .switch button .sub{display:block;font-family:'Space Mono',monospace;font-size:9px;font-weight:400;opacity:.75;margin-top:2px}
+  .switch button.on{background:var(--card);color:var(--ink);box-shadow:0 1px 3px rgba(16,24,20,.1)}
+
+  .hero{background:var(--ink);color:#fff;border-radius:20px;padding:24px 22px;position:relative;overflow:hidden}
+  .hero::after{content:"";position:absolute;right:-60px;top:-60px;width:220px;height:220px;background:radial-gradient(circle,rgba(0,179,106,.32),transparent 65%)}
+  .eyebrow{font-family:'Space Mono',monospace;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#00d57e;margin-bottom:12px;position:relative;z-index:1}
+  .route{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:clamp(24px,7vw,34px);line-height:1.05;letter-spacing:-.02em;position:relative;z-index:1}
+  .submeta{margin-top:12px;display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13px;color:#aeb7bd;position:relative;z-index:1}
+  .submeta b{color:#fff;font-weight:600}
+
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border-radius:14px;overflow:hidden;margin:14px 0 26px;box-shadow:var(--shadow)}
+  .stat{background:var(--card);padding:14px 8px;text-align:center}
+  .stat .v{font-family:'Space Mono',monospace;font-weight:700;font-size:17px;letter-spacing:-.02em}
+  .stat .l{font-size:10.5px;color:var(--muted);margin-top:3px}
+
+  .sec{margin-top:28px}
+  .sec-h{display:flex;align-items:baseline;gap:10px;margin-bottom:13px;padding-left:2px}
+  .sec-n{font-family:'Space Mono',monospace;font-size:12px;color:var(--charge-d);font-weight:700}
+  .sec-t{font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:19px;letter-spacing:-.01em}
+  .sec-sub{font-size:13px;color:var(--muted);margin:-6px 0 13px 2px}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);overflow:hidden}
+
+  .row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid var(--line)}
+  .row:last-child{border-bottom:0}
+  .row.home{background:var(--home-bg)}
+  .row-name{font-weight:600;font-size:14px}
+  .row-meta{font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);margin-top:2px}
+  .row-r{text-align:right;flex:none}
+  .row-amt{font-family:'Space Mono',monospace;font-weight:700;font-size:14.5px}
+  .row-rate{font-size:10.5px;color:var(--faint);margin-top:2px}
+  .tag{display:inline-block;font-family:'Space Mono',monospace;font-size:9px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;padding:2px 5px;border-radius:5px;margin-left:6px;vertical-align:middle;background:#EEF1F3;color:var(--muted)}
+  .tag.exp{background:#FBF3E4;color:#9A6B1A}
+  .tag.hm{background:#D8E7F7;color:#215C9E}
+  .tag.cheap{background:#E0F5EA;color:var(--charge-d)}
+
+  .total-row{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:#F4FBF7;font-weight:700;font-size:14px}
+  .total-row .v{font-family:'Space Mono',monospace;font-size:16px;color:var(--charge-d)}
+
+  .legsplit{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .legcard{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 15px;box-shadow:var(--shadow)}
+  .legcard .lt{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-family:'Space Mono',monospace}
+  .legcard .lv{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:20px;margin-top:5px}
+  .legcard .ls{font-size:12px;color:var(--muted);margin-top:2px}
+
+  .cmp{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .cmp-col{border-radius:14px;padding:15px;box-shadow:var(--shadow)}
+  .cmp-col.byd{background:#F4FBF7;border:1px solid #CDEDDC}
+  .cmp-col.tig{background:var(--tig-bg);border:1px solid #F0D0CC}
+  .cmp-h{font-weight:700;font-size:13px;display:flex;align-items:center;gap:6px;margin-bottom:9px}
+  .cmp-h .dot{width:8px;height:8px;border-radius:50%}
+  .cmp-big{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:25px;letter-spacing:-.02em}
+  .cmp-big.byd{color:var(--charge-d)}
+  .cmp-big.tig{color:var(--tig)}
+  .cmp-sub{font-size:11.5px;color:var(--muted);margin-top:4px;line-height:1.4}
+  .savings{margin-top:11px;text-align:center;background:var(--ink);color:#fff;border-radius:14px;padding:16px;box-shadow:var(--shadow)}
+  .savings .sv-label{font-family:'Space Mono',monospace;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:#00d57e}
+  .savings .sv-amt{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:29px;margin-top:6px;letter-spacing:-.02em}
+  .savings .sv-note{font-size:12px;color:#aeb7bd;margin-top:4px}
+
+  .note{margin-top:13px;background:#FBF3E4;border:1px solid #F0DDB8;border-radius:12px;padding:12px 14px;font-size:12.5px;color:#7A5414;display:flex;gap:9px;line-height:1.45}
+
+  footer{margin-top:28px;text-align:center;font-size:11px;color:var(--faint);line-height:1.6}
+  footer .mono{font-family:'Space Mono',monospace}
+
+  [hidden]{display:none !important}
+  @media (max-width:400px){
+    .legsplit,.cmp{grid-template-columns:1fr}
+    .row{padding:12px 13px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="switch">
+    <button id="btn-april" class="on" onclick="show('april')">Markdorf I <span class="sub">10.–13.04. · ~1.700 km</span></button>
+    <button id="btn-caorle" onclick="show('caorle')">Caorle <span class="sub">10.–14.07. · 1.172 km</span></button>
+    <button id="btn-markdorf" onclick="show('markdorf')">Markdorf II <span class="sub">14.–17.08. · 1.372 km</span></button>
+  </div>
+
+  <!-- ============ MARKDORF I (APRIL) ============ -->
+  <div id="april">
+    <header class="hero">
+      <div class="eyebrow">Trip-Report · 10.–13.04.2026</div>
+      <div class="route">Wien ↔ Markdorf</div>
+      <div class="submeta">
+        <span><b>~1.700 km</b></span><span>BYD Seal U Design</span><span>1 × daheim + 7 Stopps</span>
+      </div>
+    </header>
+
+    <div class="stats">
+      <div class="stat"><div class="v">~382</div><div class="l">kWh gesamt</div></div>
+      <div class="stat"><div class="v">~22,5</div><div class="l">kWh/100km</div></div>
+      <div class="stat"><div class="v">€186,70</div><div class="l">Ladekosten</div></div>
+    </div>
+
+    <section class="sec">
+      <div class="sec-h"><span class="sec-n">01</span><span class="sec-t">Ladestopps</span></div>
+      <div class="card">
+        <div class="row home"><div><div class="row-name">Daheim Wien<span class="tag hm">go-e</span></div><div class="row-meta">10.04. · 56,17 kWh · 10h37</div></div><div class="row-r"><div class="row-amt">€16,13</div><div class="row-rate">€0,287/kWh</div></div></div>
+        <div class="row"><div><div class="row-name">Eberstalzell<span class="tag cheap">Tesla AT</span></div><div class="row-meta">10.04. · 27,60 kWh</div></div><div class="row-r"><div class="row-amt">€12,41</div><div class="row-rate">€0,450/kWh</div></div></div>
+        <div class="row"><div><div class="row-name">Irschenberg<span class="tag exp">Tesla DE</span></div><div class="row-meta">10.04. · 76,47 kWh</div></div><div class="row-r"><div class="row-amt">€44,35</div><div class="row-rate">€0,580/kWh</div></div></div>
+        <div class="row"><div><div class="row-name">Lindau<span class="tag">Tesla DE</span></div><div class="row-meta">10.04. · 35,25 kWh</div></div><div class="row-r"><div class="row-amt">€18,33</div><div class="row-rate">€0,520/kWh</div></div></div>
+        <div class="row"><div><div class="row-name">Markdorf, Planckstr.<span class="tag">EWE Go</span></div><div class="row-meta">12.04. · ~61,5 kWh</div></div><div class="row-r"><div class="row-amt">€32,00</div><div class="row-rate">€0,520/kWh</div></div></div>
+        <div class="row"><div><div class="row-name">Olching<span class="tag">EWE Go</span></div><div class="row-meta">13.04. · ~73,2 kWh</div></div><div class="row-r"><div class="row-amt">€38,08</div><div class="row-rate">€0,520/kWh</div></div></div>
+        <div class="row"><div><div class="row-name">Asten<span class="tag cheap">Tesla AT</span></div><div class="row-meta">13.04. · 34,15 kWh</div></div><div class="row-r"><div class="row-amt">€14,00</div><div class="row-rate">€0,410/kWh</div></div></div>
+        <div class="row"><div><div class="row-name">St. Pölten<span class="tag exp">Minutentarif</span></div><div class="row-meta">13.04. · 12 min · ~18 kWh</div></div><div class="row-r"><div class="row-amt">€11,40</div><div class="row-rate">~€0,63/kWh</div></div></div>
+        <div class="total-row"><span>Gesamt · ~382 kWh</span><span class="v">€186,70</span></div>
+      </div>
+      <div class="note"><span>⚠️</span><div><b>St. Pölten</b> lief noch über den alten Minutentarif (125-kW-Säule) — 12 Minuten für €11,40, hochgerechnet der teuerste Strom aller drei Trips. <b>Irschenberg</b> mit €0,58/kWh war der teuerste Einzelstopp.</div></div>
+    </section>
+
+    <section class="sec">
+      <div class="sec-h"><span class="sec-n">02</span><span class="sec-t">Hin- vs. Rückfahrt</span></div>
+      <div class="legsplit">
+        <div class="legcard"><div class="lt">Hinfahrt · 10.04.</div><div class="lv">€91,22</div><div class="ls">195,5 kWh · daheim + 3</div></div>
+        <div class="legcard"><div class="lt">Rückfahrt · 13.04.</div><div class="lv">€63,48</div><div class="ls">~125,4 kWh · 3 Stopps</div></div>
+      </div>
+      <div class="note"><span>ℹ️</span><div>Dazu €32,00 vor Ort in Markdorf (12.04.) — der Trip hatte mit ~1.700 km deutlich mehr Ausflugs-km als die späteren beiden.</div></div>
+    </section>
+
+    <section class="sec">
+      <div class="sec-h"><span class="sec-n">03</span><span class="sec-t">BYD vs. Tiguan</span></div>
+      <p class="sec-sub">Gleiche ~1.700 km mit dem VW Tiguan Highline TSI ACT DSG (Super95 €1,76/L).</p>
+      <div class="cmp">
+        <div class="cmp-col byd"><div class="cmp-h"><span class="dot" style="background:var(--charge)"></span>BYD Seal U</div><div class="cmp-big byd">€186,70</div><div class="cmp-sub">~382 kWh · Ø€0,489/kWh<br>inkl. Heimladung</div></div>
+        <div class="cmp-col tig"><div class="cmp-h"><span class="dot" style="background:var(--tig)"></span>VW Tiguan</div><div class="cmp-big tig">€269–284</div><div class="cmp-sub">~153–162 L Super95<br>9,0–9,5 L/100km</div></div>
+      </div>
+      <div class="savings"><div class="sv-label">Ersparnis mit dem BYD</div><div class="sv-amt">~€82–97</div><div class="sv-note">€10,98/100km statt ~€16,00/100km</div></div>
+    </section>
+  </div>
+
+  <!-- ============ CAORLE ============ -->
+  <div id="caorle" hidden>
+    <header class="hero">
+      <div class="eyebrow">Trip-Report · 10.–14.07.2026</div>
+      <div class="route">Wien ↔ Caorle</div>
+      <div class="submeta">
+        <span><b>1.172 km</b></span><span>BYD Seal U Design</span><span>1 × daheim + 5 Stopps</span>
+      </div>
+    </header>
+
+    <div class="stats">
+      <div class="stat"><div class="v">264,1</div><div class="l">kWh gesamt</div></div>
+      <div class="stat"><div class="v">22,5</div><div class="l">kWh/100km</div></div>
+      <div class="stat"><div class="v">€106,44</div><div class="l">Ladekosten</div></div>
+    </div>
+
+    <section class="sec">
+      <div class="sec-h"><span class="sec-n">01</span><span class="sec-t">Ladestopps</span></div>
+      <div class="card">
+        <div class="row home"><div><div class="row-name">Daheim Wien<span class="tag hm">go-e</span></div><div class="row-meta">09.07. · 46,56 kWh · 6h34</div></div><div class="row-r"><div class="row-amt">€10,67</div><div class="row-rate">€0,229/kWh</div></div></div>
+        <div class="row"><div><div class="row-name">Völkermarkt<span class="tag cheap">Tesla AT</span></div><div class="row-meta">10.07. · 64,26 kWh</div></div><div class="row-r"><div class="row-amt">€21,20</div><div class="row-rate">€0,33/kWh</div></div></div>
+        <div class="row"><div><div class="row-name">Bagnaria Arsa<span class="tag exp">IONITY</span></div><div class="row-meta">10.07. · 26,71 kWh</div></div><div class="row-r"><div class="row-amt">€21,46</div><div class="row-rate">€0,80/kWh</div></div></div>
+        <div class="row"><div><div class="row-name">Noventa di Piave<span class="tag">Tesla IT</span></div><div class="row-meta">14.07. · 47,73 kWh</div></div><div class="row-r"><div class="row-amt">€23,38</div><div class="row-rate">€0,49/kWh</div></div></div>
+        <div class="row"><div><div class="row-name">Völkermarkt<span class="tag cheap">Tesla AT</span></div><div class="row-meta">14.07. · 68,52 kWh</div></div><div class="row-r"><div class="row-amt">€22,61</div><div class="row-rate">€0,33/kWh</div></div></div>
+        <div class="row"><div><div class="row-name">Villach – Pizza Plus<span class="tag exp">Electra</span></div><div class="row-meta">14.07. · 10,32 kWh</div></div><div class="row-r"><div class="row-amt">€7,12</div><div class="row-rate">€0,69/kWh</div></div></div>
+        <div class="total-row"><span>Gesamt · 264,09 kWh</span><span class="v">€106,44</span></div>
+      </div>
+      <div class="note"><span>💡</span><div>Die Heimladung mit <b>€0,229/kWh</b> ist der billigste Strom der Tour — halb so teuer wie Tesla AT, ein Drittel von IONITY.</div></div>
+    </section>
+
+    <section class="sec">
+      <div class="sec-h"><span class="sec-n">02</span><span class="sec-t">Hin- vs. Rückfahrt</span></div>
+      <div class="legsplit">
+        <div class="legcard"><div class="lt">Hinfahrt · 10.07.</div><div class="lv">€53,33</div><div class="ls">137,53 kWh · daheim + 2</div></div>
+        <div class="legcard"><div class="lt">Rückfahrt · 14.07.</div><div class="lv">€53,11</div><div class="ls">126,56 kWh · 3 Stopps</div></div>
+      </div>
+    </section>
+
+    <section class="sec">
+      <div class="sec-h"><span class="sec-n">03</span><span class="sec-t">BYD vs. Tiguan</span></div>
+      <p class="sec-sub">Gleiche 1.172 km mit dem VW Tiguan Highline TSI ACT DSG (Super95 €1,76/L).</p>
+      <div class="cmp">
+        <div class="cmp-col byd"><div class="cmp-h"><span class="dot" style="background:var(--charge)"></span>BYD Seal U</div><div class="cmp-big byd">€106,44</div><div class="cmp-sub">264,1 kWh · Ø€0,403/kWh<br>inkl. Heimladung</div></div>
+        <div class="cmp-col tig"><div class="cmp-h"><span class="dot" style="background:var(--tig)"></span>VW Tiguan</div><div class="cmp-big tig">€186–196</div><div class="cmp-sub">~105–111 L Super95<br>9,0–9,5 L/100km</div></div>
+      </div>
+      <div class="savings"><div class="sv-label">Ersparnis mit dem BYD</div><div class="sv-amt">~€80–90</div><div class="sv-note">€9,08/100km statt ~€16,00/100km</div></div>
+    </section>
+  </div>
+
+  <!-- ============ MARKDORF ============ -->
+  <div id="markdorf" hidden>
+    <header class="hero">
+      <div class="eyebrow">Trip-Report · 14.–17.08.2026</div>
+      <div class="route">Wien ↔ Markdorf</div>
+      <div class="submeta">
+        <span><b>1.371,7 km</b></span><span>BYD Seal U Design</span><span>1 × daheim + 4 Stopps</span>
+      </div>
+    </header>
+
+    <div class="stats">
+      <div class="stat"><div class="v">313,1</div><div class="l">kWh gesamt</div></div>
+      <div class="stat"><div class="v">22,8</div><div class="l">kWh/100km</div></div>
+      <div class="stat"><div class="v">€126,90</div><div class="l">Ladekosten</div></div>
+    </div>
+
+    <section class="sec">
+      <div class="sec-h"><span class="sec-n">01</span><span class="sec-t">Ladestopps</span></div>
+      <div class="card">
+        <div class="row home"><div><div class="row-name">Daheim Wien<span class="tag hm">go-e</span></div><div class="row-meta">14.08. · 67,86 kWh · 12h10</div></div><div class="row-r"><div class="row-amt">€15,56</div><div class="row-rate">€0,229/kWh</div></div></div>
+        <div class="row"><div><div class="row-name">Bernau/Chiemsee<span class="tag">Tesla DE</span></div><div class="row-meta">14.08. · 89,21 kWh</div></div><div class="row-r"><div class="row-amt">€41,92</div><div class="row-rate">€0,47/kWh</div></div></div>
+        <div class="row"><div><div class="row-name">Lindau (Bodensee)<span class="tag">Tesla DE</span></div><div class="row-meta">17.08. · 76,52 kWh</div></div><div class="row-r"><div class="row-amt">€32,90</div><div class="row-rate">€0,43/kWh</div></div></div>
+        <div class="row"><div><div class="row-name">Bernau/Chiemsee<span class="tag">Tesla DE</span></div><div class="row-meta">17.08. · 65,42 kWh</div></div><div class="row-r"><div class="row-amt">€30,74</div><div class="row-rate">€0,47/kWh</div></div></div>
+        <div class="row"><div><div class="row-name">Bernau Hochfellnstr.<span class="tag">Tesla DE</span></div><div class="row-meta">17.08. · 14,10 kWh</div></div><div class="row-r"><div class="row-amt">€5,78</div><div class="row-rate">€0,41/kWh</div></div></div>
+        <div class="total-row"><span>Gesamt · 313,11 kWh</span><span class="v">€126,90</span></div>
+      </div>
+      <div class="note"><span>💡</span><div>Die Heimladung war mit <b>€0,229/kWh</b> nur halb so teuer wie der günstigste Tesla-Stopp — sie deckt 22 % der Energie, aber nur 12 % der Kosten.</div></div>
+    </section>
+
+    <section class="sec">
+      <div class="sec-h"><span class="sec-n">02</span><span class="sec-t">Hin- vs. Rückfahrt</span></div>
+      <div class="legsplit">
+        <div class="legcard"><div class="lt">Hinfahrt · 14.08.</div><div class="lv">€57,48</div><div class="ls">157,06 kWh · daheim + 1</div></div>
+        <div class="legcard"><div class="lt">Rückfahrt · 17.08.</div><div class="lv">€69,42</div><div class="ls">156,05 kWh · 3 Stopps</div></div>
+      </div>
+    </section>
+
+    <section class="sec">
+      <div class="sec-h"><span class="sec-n">03</span><span class="sec-t">BYD vs. Tiguan</span></div>
+      <p class="sec-sub">Gleiche 1.371,7 km mit dem VW Tiguan Highline TSI ACT DSG (Super95 €1,76/L).</p>
+      <div class="cmp">
+        <div class="cmp-col byd"><div class="cmp-h"><span class="dot" style="background:var(--charge)"></span>BYD Seal U</div><div class="cmp-big byd">€126,90</div><div class="cmp-sub">313,1 kWh · Ø€0,405/kWh<br>inkl. Heimladung</div></div>
+        <div class="cmp-col tig"><div class="cmp-h"><span class="dot" style="background:var(--tig)"></span>VW Tiguan</div><div class="cmp-big tig">€217–229</div><div class="cmp-sub">~124–130 L Super95<br>9,0–9,5 L/100km</div></div>
+      </div>
+      <div class="savings"><div class="sv-label">Ersparnis mit dem BYD</div><div class="sv-amt">~€90–102</div><div class="sv-note">€9,25/100km statt ~€16,50/100km</div></div>
+      <div class="note"><span>⚡</span><div>Deutschland ist deutlich teurer als Österreich: €0,41–0,47/kWh gegenüber €0,33 bei Tesla AT. Nächstes Mal noch in AT möglichst voll machen.</div></div>
+    </section>
+  </div>
+
+  <footer>
+    <span class="mono">Quellen: Tesla-, IONITY-, Electra-Rechnungen &amp; go-e Wallbox · Trip B laut Bordcomputer</span>
+  </footer>
+</div>
+
+<script>
+  var TABS = ['april','caorle','markdorf'];
+  function show(which){
+    TABS.forEach(function(t){
+      document.getElementById(t).hidden = (t !== which);
+      document.getElementById('btn-' + t).classList.toggle('on', t === which);
+    });
+    window.scrollTo({top:0, behavior:'smooth'});
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+Rech nu ng
+Tesla Motors Austria GmbH
+Triester Straße 207-209	Rechnungsnummer	4015P0000000001
+1230 Wien	Rechnungsdatum	2026/04/13
+USt-IdNr: ATU67878139	Referenznummer	aaaaaaaa-0000-4000-8000-000000000001
+www.tesla.com	Kundennummer	3000000000
+Verkauft an	Ladestation
+Max Mustermann	St. Pölten, Austria
+Musterstraße 1/2/3	Völklplatz 1
+1010 Wien AT	3100 St. Pölten AT
+max.mustermann@example.com	S/N: SC00000000000XXXX - 0 / 125 kW DC
+Preis/Einheit
+Event-Datum	Beschreibung	Anzahl	Steuern (%)	Total (EUR)
+(EUR)
+2026/04/13	Stromgebühr - Stufe 2	0.520000 / min	1 min	20	0.52
+2026/04/13	Stromgebühr - Stufe 3	0.816364 / min	11 min	20	8.98
+Teilsumme	9.50
+Gesamtsumme Steuern	1.90
+Gesamtbetrag (EUR)	11.40
+Code	Steuerpflichtiger Gesamtbetrag (EUR)	Steuern (%)	Steuerbetrag (EUR)	Beschreibung
+ATSR	9.50	20.00	1.90	ÖrtliCHer MwSt. Standardsatz
+Tesla Motors Austria GmbH, Triester Straße 207-209, 1230 Wien. Geschäftsführer: Maria Schlichenmaier, Stephan Werkman, Joseph
+Gruber. Firmenbuchnummer FN 394547t

@@ -287,3 +287,84 @@ bewusst ein Median der günstigsten Stationen, kein Wien-Durchschnitt.
 - `comp_benzin_verbrauch_l`, `comp_ev_verbrauch_kwh`, `comp_benzin_preis`
 
 Alle mit Defaults im settings-Merge-Block gesichert (NaN-safe).
+
+---
+
+## Trip-Reports (`src/`, ab v1.16.0)
+
+Reise-Reports aus Ladebelegen. Neue Teile liegen als **ES-Module unter `src/`**
+und werden von `index.html` als zweites, eigenes `<script type="module">`
+geladen. `script.js` bleibt ein klassisches Script und wird **nicht** umgebaut –
+die Module greifen über die globalen Funktionen darauf zu (`calcTotal`,
+`energyPriceFor`, `benzinPreis`, `fmt`, …). Kein Build-Schritt: GitHub Pages
+liefert `src/` unverändert aus. Die `package.json` im Root ist reine
+Entwicklungsinfrastruktur (Vitest, pdf.js für das Fixture-Werkzeug).
+
+**pdf.js** kommt per Dynamic Import von jsDelivr, erst beim Öffnen der
+Trip-Ansicht (`src/lib/pdf.js`). Version ist in `PDFJS_VERSION` gepinnt. Der
+Start des Ladefuchs wird dadurch nicht langsamer.
+
+### Textextraktion (`itemsToLines`)
+
+`getTextContent()` liefert Fragmente mit Position, keine Zeilen. Ein
+`items.map(i => i.str).join(' ')` zerstört die Tabellenstruktur, an der alle
+Parser hängen. Stattdessen: nach Y-Koordinate zu Zeilen bündeln (PDF-Ursprung
+unten links → absteigend), innerhalb der Zeile nach X sortieren, und beim
+Zusammenfügen die Lücke bewerten – **grosse Lücke = `\t` (Spalte)**, kleine =
+Leerzeichen. Die Schwelle hängt an der Schrifthöhe, nicht an einem absoluten
+Wert, sonst kippt sie mit der Schriftgrösse.
+
+Ohne Textebene (Scan) wird abgebrochen statt geraten – kein OCR (Edge Case 9).
+
+### Netto oder brutto? (`src/parsers/verify.js`)
+
+**Die Spec-Tabelle in §4.1 ordnet das dem Aussteller zu. Das stimmt nicht.**
+In den vorliegenden Rechnungen ist `Preis/Einheit` bei *Tesla Germany* mal
+netto (Lindau `0.436865 × 35.2512 = 15,40` = Teilsumme), mal brutto (Bernau
+`0.47 × 89.2064 = 41,92` = Gesamtbetrag) – gleicher Rechtsträger, gleiches
+Layout, teils derselbe Monat. Es gibt also keine Regel pro Anbieter, an der
+man sich festhalten könnte.
+
+Verlässlich ist stattdessen die Spalte **`Total (EUR)` der Positionszeile: sie
+ist netto** und summiert sich zur Teilsumme, nie zum Gesamtbetrag. Der
+Bruttobetrag entsteht daraus über den Steuersatz derselben Zeile, gegengeprüft
+gegen den ausgewiesenen Gesamtbetrag (±0,02 €). Die Netto/Brutto-Einordnung des
+Stückpreises läuft weiter mit (`unitPriceBasis`), aber nur noch als Kontrolle:
+passt der Stückpreis zu keiner der beiden Summen, wird die Zeile mit
+`needsReview` markiert statt still geraten.
+
+Angezeigt wird immer `grossTotal / kwh` – die einzige über alle Anbieter
+vergleichbare Zahl.
+
+### Zahlen (`src/lib/num.js`)
+
+`parseDecimal()` steht **neben** `parseNum()` aus dem CSV-Import, ersetzt es
+nicht. `parseNum()` setzt voraus, dass in einer Datei entweder Komma oder Punkt
+der Dezimaltrenner ist; für Rechnungen gilt das nicht (IONITY mischt beides in
+einer Zeile). Heuristik: das letzte Trennzeichen ist der Dezimalpunkt, ausser es
+folgen exakt drei Ziffern **und** es gibt ein weiteres Trennzeichen desselben
+Zeichens (`1.234.567` → 1234567, aber `1.234,567` → 1234.567 und `26,707` →
+26,707). Gibt `null` statt `NaN` zurück, damit niemand versehentlich
+weiterrechnet.
+
+### Parser-Interface
+
+`{ id, label, detect(text) -> boolean, parse(text) -> Charge[] }`, registriert
+in `src/parsers/index.js`. `parseInvoiceText()` wirft nie – eine kaputte Datei
+darf einen Mehrfach-Import nicht abbrechen, sie geht als `unrecognized` durch.
+Die Charge-`id` ist deterministisch (`anbieter:rechnungsnummer:datum`), damit
+dieselbe Rechnung zweimal eingelesen nicht doppelt zählt (Edge Case 7).
+
+Eine Tesla-Rechnung deckt einen Ladestopp ab; mehrere Positionszeilen sind
+Tarifstufen derselben Session und werden nach Event-Datum zusammengefasst
+(Minutentarif: „Stufe 2" 1 min + „Stufe 3" 11 min = 12 min / 11,40 €).
+
+**Minutentarif:** `kwh: null` und `estimated: true` – nie `0`. Die Rechnung
+nennt keine kWh, geschätzt wird im UI, nicht im Parser (gleiche Logik wie beim
+`maxKw`-Peak-Tracker: fehlender Messwert ist nicht null).
+
+### Tests
+
+`npm test` (Vitest). Fixtures in `fixtures/` sind anonymisierte Textextrakte
+echter Rechnungen, erzeugt über `npm run dump-pdf` – dasselbe `itemsToLines()`
+wie zur Laufzeit, damit Fixture und Browser nicht auseinanderlaufen.

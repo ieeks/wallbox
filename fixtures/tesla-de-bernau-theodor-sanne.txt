@@ -1,0 +1,31 @@
+Rech nu ng
+Tesla Germany GmbH
+Ludwig-Prandtl-Straße 27 - 29	Rechnungsnummer	4020P0000000002
+12526 Berlin	Rechnungsdatum	2026/08/14
+USt-IdNr: DE265761887	81399d28-f50c-4fa9-
+Referenznummer
+8acd-bf7de8a0bef4
+www.tesla.com
+Kundennummer	3000000000
+Verkauft an	Ladestation
+Max Mustermann	Bernau am Chiemsee, Germany - Theodor-Sanne-Straße
+Musterstraße 1/2/3	Theodor-Sanne-Straße 4
+1010 Wien AT	83233 Bernau am Chiemsee DE
+max.mustermann@example.com	S/N: GF00000000000XXX - 1 / 250 kW DC
+Preis/Einheit
+Event-Datum	Beschreibung	Anzahl	Steuern (%)	Total (EUR)
+(EUR)
+2026/08/14	Stromgebühr	0.47 / kWh	89.2064 kWh	19	35.23
+Teilsumme	35.23
+Gesamtsumme Steuern	6.69
+Gesamtbetrag (EUR)	41.92
+Steuerpflichtiger
+Code	Steuern (%)	Steuerbetrag (EUR)	Beschreibung
+Gesamtbetrag (EUR)
+Örtlicher MwSt.
+DESR	35.23	19.00	6.69
+Standardsatz
+Tesla Germany GmbH Ludwig-Prandtl-Straße 27 - 29, 12526 Berlin, Deutschland Amtsgericht Charlottenburg, HRB 235261 B Geschäftsführer:
+Stephan Werkman, Joseph Gruber , Simon Zwahlen, Amtsgericht Charlottenburg (Berlin), HRB 235261 B
+Tesla Germany GmbH Ludwig-Prandtl-Straße 27 - 29, 12526 Berlin, Deutschland Amtsgericht Charlottenburg, HRB 235261 B
+Geschäftsführer: Stephan Werkman, Joseph Gruber , Simon Zwahlen, Amtsgericht Charlottenburg (Berlin), HRB 235261 B
