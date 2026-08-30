@@ -179,10 +179,9 @@ describe('Warnungen', () => {
 // =====================================================================
 // Integrationstest Spec §10: ein kompletter Trip.
 // =====================================================================
-// Drei Positionen kommen aus echten Rechnungs-Fixtures. Die Heimladung und
-// die beiden Völkermarkt-Stopps liegen als Werte vor (Heimladung aus dem
-// Ladefuchs-Bestand, Völkermarkt aus dem Referenz-Report) – für die beiden
-// Tesla-AT-Rechnungen gibt es noch keine PDFs.
+// Fünf Rechnungen rein, erwartete Summen raus. Alle fünf Positionen stammen
+// aus echten Rechnungs-Fixtures; einzig die Heimladung ist keine Rechnung,
+// sondern kommt wie in der App aus dem Ladefuchs-Bestand.
 describe('Trip Caorle – Gesamtrechnung', () => {
   const trip = {
     id: 'caorle-2026-07',
@@ -197,23 +196,27 @@ describe('Trip Caorle – Gesamtrechnung', () => {
     trip,
   );
 
-  const voelkermarkt = (date, kwh, grossTotal) => fromInvoiceCharge({
-    id: `tesla-at:x:${date}:${kwh}`, provider: 'tesla-at', date, location: 'Völkermarkt',
-    kwh, grossTotal, netTotal: null, grossPerKwh: grossTotal / kwh, vatRate: 0.2,
-    estimated: false, isAggregate: false, needsReview: false, reviewReasons: [],
-  }, trip);
+  const rechnung = name => parseFixture(name).map(c => fromInvoiceCharge(c, trip));
 
   const charges = [
     heimladung,
-    voelkermarkt('2026-07-10', 64.2622, 21.20),
-    ...parseFixture('ionity-it-bagnaria-arsa').map(c => fromInvoiceCharge(c, trip)),
-    ...parseFixture('tesla-it-noventa-di-piave').map(c => fromInvoiceCharge(c, trip)),
-    voelkermarkt('2026-07-14', 68.5208, 22.61),
-    ...parseFixture('electra-at-villach').map(c => fromInvoiceCharge(c, trip)),
+    ...rechnung('tesla-at-voelkermarkt-hinfahrt'),
+    ...rechnung('ionity-it-bagnaria-arsa'),
+    ...rechnung('tesla-it-noventa-di-piave'),
+    ...rechnung('tesla-at-voelkermarkt-rueckfahrt'),
+    ...rechnung('electra-at-villach'),
   ];
 
   const r = aggregateTrip({
     trip, charges, fuelPrice: 1.76, litersPer100Min: 9.0, litersPer100Max: 9.5,
+  });
+
+  it('setzt sich aus fünf echten Rechnungen plus der Heimladung zusammen', () => {
+    expect(charges).toHaveLength(6);
+    expect(charges.filter(c => c.isHome)).toHaveLength(1);
+    expect(charges.filter(c => c.needsReview)).toHaveLength(0);
+    expect(new Set(charges.map(c => c.provider))).toEqual(
+      new Set(['home', 'tesla-at', 'ionity', 'tesla-it', 'electra']));
   });
 
   it('trifft die Sollwerte aus §10', () => {

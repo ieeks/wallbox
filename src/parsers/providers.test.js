@@ -155,6 +155,8 @@ describe('Netto/Brutto über alle Anbieter', () => {
       'tesla-de-bernau-theodor-sanne': 0.470,
       'tesla-de-bernau-hochfellnstrasse': 0.410,
       'tesla-it-noventa-di-piave': 0.490,
+      'tesla-at-voelkermarkt-hinfahrt': 0.330,
+      'tesla-at-voelkermarkt-rueckfahrt': 0.330,
       'ionity-it-bagnaria-arsa': 0.804,
       'electra-at-villach': 0.690,
       'ewe-go-sammelrechnung': 0.520,

@@ -36,10 +36,12 @@ bleiben **unverändert** – sie sind der Prüfgegenstand.
 | `tesla-de-bernau-theodor-sanne.txt` | Tesla DE | Stückpreis **brutto** (0.47 × 89.2064 = Gesamtbetrag 41,92) |
 | `tesla-de-bernau-hochfellnstrasse.txt` | Tesla DE | Stückpreis brutto; zweiter Standort im selben Ort |
 | `tesla-it-noventa-di-piave.txt` | Tesla IT | 22 % IVA, sonst identisches Layout |
+| `tesla-at-voelkermarkt-hinfahrt.txt` | Tesla AT | 20 % USt; zusammen mit der Rückfahrt zwei Ladungen am selben Standort |
+| `tesla-at-voelkermarkt-rueckfahrt.txt` | Tesla AT | das Beispiel aus Spec §4.1 (0,274980 × 68,5208 = 18,84 netto) |
 | `ionity-it-bagnaria-arsa.txt` | IONITY | **Dezimaltrenner-Mix in einer Zeile**; Stückpreis auf 2 Stellen gerundet |
 | `electra-at-villach.txt` | Electra | Stückpreis-Feld ist 0,00 €; Ladeort steht im Zahlungsblock; Rechnungsnummer bricht um |
 | `ewe-go-sammelrechnung.txt` | EWE Go | **Monats-Sammelrechnung**, eine Zeile für einen ganzen Leistungszeitraum |
 
-Für den Integrationstest über einen kompletten Trip (Spec §10: 264,09 kWh /
-106,44 € bei 1172 km) fehlen noch die beiden Tesla-AT-Rechnungen aus
-Völkermarkt (64,26 kWh / 21,20 € und 68,52 kWh / 22,61 €).
+Der Integrationstest über einen kompletten Trip (Spec §10: 264,09 kWh /
+106,44 € bei 1172 km) läuft damit vollständig aus echten Rechnungen – nur die
+Heimladung kommt, wie in der App, aus dem Ladefuchs-Bestand statt aus einer PDF.

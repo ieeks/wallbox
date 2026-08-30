@@ -21,6 +21,8 @@ describe('Tesla – Erkennung', () => {
       'tesla-de-bernau-theodor-sanne',
       'tesla-de-bernau-hochfellnstrasse',
       'tesla-it-noventa-di-piave',
+      'tesla-at-voelkermarkt-hinfahrt',
+      'tesla-at-voelkermarkt-rueckfahrt',
     ]) {
       expect(tesla.detect(fixture(name))).toBe(true);
     }
@@ -45,6 +47,8 @@ describe('Tesla – Beträge', () => {
     { name: 'tesla-de-irschenberg',             kwh: 76.4702, gross: 44.35, perKwh: 0.580, ort: 'Irschenberg' },
     { name: 'tesla-de-bernau-theodor-sanne',    kwh: 89.2064, gross: 41.92, perKwh: 0.470, ort: 'Bernau am Chiemsee – Theodor-Sanne-Straße' },
     { name: 'tesla-de-bernau-hochfellnstrasse', kwh: 14.1028, gross: 5.78,  perKwh: 0.410, ort: 'Bernau am Chiemsee – Hochfellnstraße' },
+    { name: 'tesla-at-voelkermarkt-hinfahrt',    kwh: 64.2622, gross: 21.20, perKwh: 0.330, ort: 'Völkermarkt' },
+    { name: 'tesla-at-voelkermarkt-rueckfahrt',  kwh: 68.5208, gross: 22.61, perKwh: 0.330, ort: 'Völkermarkt' },
   ];
 
   for (const f of faelle) {
@@ -95,6 +99,28 @@ describe('Tesla – Netto/Brutto des Stückpreises', () => {
     // unterscheidet sich – der Bruttobetrag stimmt trotzdem in beiden Fällen.
     expect(single('tesla-de-lindau').grossTotal).toBe(18.33);
     expect(single('tesla-de-bernau-theodor-sanne').grossTotal).toBe(41.92);
+  });
+});
+
+describe('Tesla – zwei Rechnungen desselben Standorts', () => {
+  it('hält Hin- und Rückfahrt auseinander', () => {
+    // Beide Male Völkermarkt, nur das Datum unterscheidet sie. Über die
+    // Rechnungsnummer in der id bleiben es zwei Ladungen, kein Duplikat.
+    const hin = single('tesla-at-voelkermarkt-hinfahrt');
+    const zurueck = single('tesla-at-voelkermarkt-rueckfahrt');
+    expect(hin.location).toBe(zurueck.location);
+    expect(hin.date).toBe('2026-07-10');
+    expect(zurueck.date).toBe('2026-07-14');
+    expect(hin.id).not.toBe(zurueck.id);
+  });
+
+  it('liest das Beispiel aus Spec §4.1 korrekt', () => {
+    // „0,274980 × 68,5208 = 18,84 = Teilsumme (netto), brutto 22,61"
+    const c = single('tesla-at-voelkermarkt-rueckfahrt');
+    expect(c.netTotal).toBe(18.84);
+    expect(c.grossTotal).toBe(22.61);
+    expect(c.unitPriceBasis).toBe('net');
+    expect(c.vatRate).toBeCloseTo(0.2, 10);
   });
 });
 
