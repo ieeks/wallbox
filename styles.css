@@ -1076,3 +1076,145 @@ nav {
   height: 8px;
   transition: width 0.6s ease;
 }
+
+/* --- TRIP-REPORTS --- */
+/* Durchgehend Bestands-Tokens: --primary/--green/--surface/--radius,
+   Manrope für Zahlen, Inter für Fliesstext. Der Trip-Report soll wie ein
+   Teil des Ladefuchs aussehen, nicht wie ein zweites Produkt. */
+
+.trip-list { display:flex; flex-direction:column; gap:10px; margin-top:16px; }
+.trip-card {
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+  padding:16px; cursor:pointer; transition:border-color .2s, transform .1s;
+  box-shadow:var(--surface-shadow);
+}
+.trip-card:hover { border-color:var(--border-focus); }
+.trip-card:active { transform:scale(0.99); }
+.trip-card:focus-visible { outline:2px solid var(--primary); outline-offset:2px; }
+.tc-head { display:flex; justify-content:space-between; align-items:baseline; gap:10px; }
+.tc-title { font-family:'Manrope'; font-weight:700; font-size:17px; letter-spacing:-0.3px; }
+.tc-cost { font-family:'Manrope'; font-weight:700; font-size:17px; color:var(--primary); white-space:nowrap; }
+.tc-sub { font-size:12px; color:var(--text-secondary); margin-top:2px; }
+.tc-stats {
+  display:flex; flex-wrap:wrap; gap:6px 14px; margin-top:10px;
+  font-size:12px; color:var(--text-secondary); font-variant-numeric:tabular-nums;
+}
+.tc-warn { margin-top:8px; font-size:11px; color:var(--amber); }
+
+.trip-hero {
+  background:var(--surface-highest); border:1px solid var(--border);
+  border-radius:var(--radius); padding:20px 18px; margin-top:4px;
+  box-shadow:var(--surface-shadow);
+}
+.th-eyebrow {
+  font-size:10px; font-weight:700; letter-spacing:1.6px; text-transform:uppercase;
+  color:var(--green); margin-bottom:8px;
+}
+.th-route { font-family:'Manrope'; font-weight:800; font-size:28px; line-height:1.1; letter-spacing:-1px; }
+.th-meta {
+  margin-top:10px; display:flex; flex-wrap:wrap; gap:4px 14px;
+  font-size:12px; color:var(--text-secondary);
+}
+.th-meta b { color:var(--text); font-weight:600; }
+
+.trip-stats { margin-top:14px; grid-template-columns:repeat(3,1fr); }
+.trip-stats .stat-value { font-size:18px; }
+.trip-stats .stat-unit { font-size:11px; }
+
+.trip-warnings { display:flex; flex-direction:column; gap:8px; margin-top:16px; }
+.trip-warn {
+  display:flex; gap:9px; align-items:flex-start; padding:11px 13px;
+  border-radius:var(--radius-sm); font-size:12.5px; line-height:1.5;
+}
+.trip-warn.is-warn { background:rgba(240,180,41,0.12); border:1px solid rgba(240,180,41,0.3); color:var(--text); }
+.trip-warn.is-info { background:var(--surface); border:1px solid var(--border); color:var(--text-secondary); }
+
+.trip-card-plain {
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--radius); overflow:hidden; box-shadow:var(--surface-shadow);
+}
+.trip-row {
+  display:flex; justify-content:space-between; gap:12px;
+  padding:13px 15px; border-bottom:1px solid var(--border);
+}
+.trip-row:last-child { border-bottom:0; }
+/* Heimladung farblich abgesetzt – sie ist der billigste Strom der Tour und
+   soll auf einen Blick als solche erkennbar sein. */
+.trip-row.is-home { background:var(--green-dim); }
+.tr-left { min-width:0; flex:1; }
+.tr-name { font-weight:600; font-size:14px; line-height:1.35; }
+.tr-meta { font-size:11.5px; color:var(--text-secondary); margin-top:3px; font-variant-numeric:tabular-nums; }
+.tr-tag {
+  display:inline-block; font-size:9px; font-weight:700; letter-spacing:0.4px;
+  text-transform:uppercase; padding:2px 6px; border-radius:5px; margin-left:6px;
+  background:var(--surface-highest); color:var(--text-secondary); vertical-align:middle;
+}
+.tr-tag.is-est { background:rgba(240,180,41,0.18); color:var(--amber); }
+.tr-tag.is-warn { background:var(--red-dim); color:var(--red); }
+.tr-actions { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; align-items:center; }
+.tr-leg {
+  font-family:'Inter'; font-size:11px; padding:4px 6px; border-radius:6px;
+  border:1px solid var(--border); background:var(--surface-high); color:var(--text); cursor:pointer;
+}
+.tr-btn {
+  font-family:'Inter'; font-size:11px; padding:4px 8px; border-radius:6px; cursor:pointer;
+  border:1px solid var(--border); background:var(--surface-high); color:var(--text-secondary);
+}
+.tr-btn:hover { color:var(--text); border-color:var(--border-focus); }
+.tr-btn.is-del:hover { color:var(--red); border-color:var(--red); }
+.tr-right { text-align:right; flex-shrink:0; }
+.tr-amount { font-family:'Manrope'; font-weight:700; font-size:15px; font-variant-numeric:tabular-nums; }
+.tr-rate { font-size:11px; color:var(--text-muted); margin-top:2px; font-variant-numeric:tabular-nums; }
+
+.trip-total {
+  display:flex; justify-content:space-between; align-items:center;
+  padding:14px 15px; background:var(--green-dim); font-weight:700; font-size:13.5px;
+}
+.trip-total .tt-val { font-family:'Manrope'; font-size:16px; color:var(--green); }
+.trip-note { font-size:12px; color:var(--text-secondary); line-height:1.5; margin:10px 2px 0; }
+
+.trip-legs { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; }
+.leg-card {
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm);
+  padding:14px; box-shadow:var(--surface-shadow);
+}
+.lg-title { font-size:10px; font-weight:700; letter-spacing:1px; text-transform:uppercase; color:var(--text-secondary); }
+.lg-value { font-family:'Manrope'; font-weight:700; font-size:20px; margin-top:5px; }
+.lg-sub { font-size:11.5px; color:var(--text-secondary); margin-top:3px; font-variant-numeric:tabular-nums; }
+
+.trip-compare { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; }
+.cmp-card { border-radius:var(--radius-sm); padding:14px; border:1px solid var(--border); }
+.cmp-card.is-ev { background:var(--green-dim); border-color:rgba(52,208,88,0.28); }
+.cmp-card.is-fuel { background:var(--red-dim); border-color:rgba(192,57,43,0.25); }
+.cc-head { display:flex; align-items:center; gap:6px; font-weight:700; font-size:12.5px; margin-bottom:8px; }
+.cc-dot { width:8px; height:8px; border-radius:50%; background:var(--green); flex-shrink:0; }
+.cmp-card.is-fuel .cc-dot { background:var(--red); }
+.cc-big { font-family:'Manrope'; font-weight:800; font-size:22px; letter-spacing:-0.6px; color:var(--green); }
+.cmp-card.is-fuel .cc-big { color:var(--red); }
+.cc-sub { font-size:11px; color:var(--text-secondary); margin-top:4px; line-height:1.45; }
+
+.trip-saving {
+  margin-top:11px; text-align:center; background:var(--surface-highest);
+  border:1px solid var(--border); border-radius:var(--radius); padding:16px;
+  box-shadow:var(--surface-shadow);
+}
+.ts-label { font-size:10px; font-weight:700; letter-spacing:1.4px; text-transform:uppercase; color:var(--green); }
+.ts-amount { font-family:'Manrope'; font-weight:800; font-size:26px; margin-top:6px; letter-spacing:-0.8px; }
+.ts-note { font-size:11.5px; color:var(--text-secondary); margin-top:4px; }
+
+.home-pick {
+  display:flex; align-items:center; gap:11px; padding:12px 15px;
+  border-bottom:1px solid var(--border); cursor:pointer;
+}
+.home-pick:last-child { border-bottom:0; }
+.home-pick input { width:18px; height:18px; accent-color:var(--green); flex-shrink:0; cursor:pointer; }
+.hp-main { min-width:0; }
+.hp-date { display:block; font-size:13px; font-weight:600; }
+.hp-meta { display:block; font-size:11.5px; color:var(--text-secondary); margin-top:2px; font-variant-numeric:tabular-nums; }
+
+#trip-drop-zone { margin-top:0; }
+
+@media (max-width:380px) {
+  .trip-compare { grid-template-columns:1fr; }
+  .trip-stats { grid-template-columns:1fr 1fr; }
+}

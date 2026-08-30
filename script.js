@@ -132,6 +132,7 @@ settings = {
   comp_tanke_zeit_min: 0.069,
   comp_tanke_zeit_abo_monat: 4.90,
   comp_benzin_verbrauch_l: 8.2,
+  comp_benzin_verbrauch_l_max: 9.5,
   comp_ev_verbrauch_kwh: 20.0,
   comp_benzin_preis: 1.80,
   comp_wallbox_installation: 2685.40,
@@ -1633,6 +1634,7 @@ function toggleSettings() {
     document.getElementById('set-tanke-min').value = settings.comp_tanke_zeit_min;
     document.getElementById('set-tanke-abo').value = settings.comp_tanke_zeit_abo_monat;
     document.getElementById('set-benzin-l').value = settings.comp_benzin_verbrauch_l;
+    document.getElementById('set-benzin-l-max').value = settings.comp_benzin_verbrauch_l_max;
     document.getElementById('set-ev-kwh').value = settings.comp_ev_verbrauch_kwh;
     document.getElementById('set-benzin-preis').value = settings.comp_benzin_preis;
     document.getElementById('set-wallbox-installation').value = settings.comp_wallbox_installation;
@@ -1653,6 +1655,7 @@ function saveSettings() {
   settings.comp_tanke_zeit_min = parseFloat(document.getElementById('set-tanke-min').value) || 0.069;
   settings.comp_tanke_zeit_abo_monat = parseFloat(document.getElementById('set-tanke-abo').value) || 4.90;
   settings.comp_benzin_verbrauch_l = parseFloat(document.getElementById('set-benzin-l').value) || 8.2;
+  settings.comp_benzin_verbrauch_l_max = parseFloat(document.getElementById('set-benzin-l-max').value) || 9.5;
   settings.comp_ev_verbrauch_kwh = parseFloat(document.getElementById('set-ev-kwh').value) || 20.0;
   settings.comp_benzin_preis = parseFloat(document.getElementById('set-benzin-preis').value) || 1.80;
   settings.comp_wallbox_installation = parseFloat(document.getElementById('set-wallbox-installation').value) || 2685.40;

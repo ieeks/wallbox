@@ -18,7 +18,7 @@ sehen Nutzer nach einem Deploy noch die alte Version.
 
 ---
 
-## Aktuelle Version: 1.15.0
+## Aktuelle Version: 1.16.0
 
 ---
 
@@ -406,3 +406,55 @@ nennt keine kWh, geschätzt wird im UI, nicht im Parser (gleiche Logik wie beim
 `npm test` (Vitest). Fixtures in `fixtures/` sind anonymisierte Textextrakte
 echter Rechnungen, erzeugt über `npm run dump-pdf` – dasselbe `itemsToLines()`
 wie zur Laufzeit, damit Fixture und Browser nicht auseinanderlaufen.
+
+---
+
+## Trip-Ansicht (`src/trips/`, ab v1.16.0)
+
+Vierter Nav-Eintrag „Trips" mit zwei Seiten: `page-trips` (Liste) und
+`page-trip-detail` (Report). Beide stehen leer in `index.html` und werden per
+`innerHTML` gefüllt – dasselbe Muster wie `page-detail`.
+
+**Die Brücke (`window.lfBridge`).** `charges`, `settings`, `db`,
+`firebaseReady`, `HOUSEHOLD_DOC` und `fmt` sind in `script.js` mit
+`let`/`const` deklariert und liegen deshalb **nicht** auf `window` – anders
+als Funktionsdeklarationen wie `calcTotal` oder `showToast`. Ein Inline-Script
+in `index.html` reicht sie als **Getter** durch (keine Kopien: `loadFromCloud()`
+weist `charges` neu zu). `script.js` selbst bleibt unangetastet.
+
+**Persistenz (`store.js`).** Sub-Collection `haushalte/haushalt/trips`, ein
+Dokument je Trip, plus localStorage-Spiegel (`lf_trips`). Ausdrücklich **kein**
+Feld am Haushalt-Dokument: `syncToCloud()` schreibt dort mit `.set()` ohne
+`{merge:true}` und würde es beim nächsten Nutzer-Sync löschen. Sub-Collections
+sind davon nicht betroffen – der Preis ist, dass Laden und Schreiben hier
+eigenständig passieren, nicht über `persist()`. Geladen wird erst beim Öffnen
+der Trip-Ansicht. Vor dem Schreiben geht alles durch `JSON.parse(JSON.stringify())`:
+Firestore lehnt `undefined` ab.
+
+**Heimladungen werden referenziert, nie kopiert** (Spec §5): der Trip hält nur
+`homeChargeIds`, die Ladung bleibt in `charges[]`. Sonst zeigt das Dashboard
+andere Zahlen als der Report. Eine von Hand geänderte Fahrtrichtung liegt
+deshalb in `trip.homeLegs`, nicht am Bestandseintrag.
+
+**Aggregation (`calc.js`)** ist frei von Globals – alles kommt als Argument,
+damit die Rechnung ohne Browser testbar ist. Der Integrationstest fährt den
+Caorle-Trip aus §10 durch: 264,09 kWh / 106,44 € / 22,5 kWh/100km.
+
+**Verbrenner-Vergleich als Spanne**, nie als Punktwert – es ist eine Schätzung.
+Untergrenze ist `comp_benzin_verbrauch_l` (der Wert, mit dem auch das Dashboard
+rechnet), Obergrenze das neue `comp_benzin_verbrauch_l_max` (Default 9,5).
+Zwei Felder, weil der Alltagsverbrauch nicht der Langstreckenverbrauch ist.
+
+**Minutentarif:** `kwh` bleibt `null`, `effectiveKwh()` fällt auf einen im UI
+gesetzten `kwhEstimate` zurück. Vorschlag ist Dauer × `DEFAULT_ESTIMATE_KW`
+(90 kW). Geschätzte Werte tragen im Report ein Badge und ein `*` an den Summen.
+
+**Edge Cases im UI:** Rechnung ausserhalb des Reisezeitraums wird nachgefragt
+statt still zugeordnet (8, Toleranz ein Tag je Seite – die Heimladung am
+Vorabend ist normal); doppelt abgelegte Rechnungen fallen über die
+deterministische Charge-`id` raus (7); eine fehlende Heimladung und eine noch
+nicht aufgeteilte Sammelrechnung erscheinen als Warnung im Report (5, 3).
+
+**Noch offen:** Split-UI für Sammelrechnungen (Spec §8 – `splitAggregate()` in
+`calc.js` ist fertig und getestet, es fehlt die Eingabemaske), Vergleichsansicht
+über alle Trips (§9), Claude-Fallback (§7).
