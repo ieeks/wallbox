@@ -1218,3 +1218,31 @@ nav {
   .trip-compare { grid-template-columns:1fr; }
   .trip-stats { grid-template-columns:1fr 1fr; }
 }
+
+/* --- SAMMELRECHNUNG AUFTEILEN --- */
+.split-row { display:flex; gap:6px; align-items:center; margin-bottom:6px; }
+.split-row input {
+  font-family:'Inter'; font-size:13px; padding:9px 10px; border-radius:8px;
+  border:1px solid var(--border); background:var(--surface-high); color:var(--text); min-width:0;
+}
+.split-row input:focus { border-color:var(--border-focus); outline:none; }
+.split-row .sp-date { flex:0 0 auto; width:132px; }
+.split-row .sp-loc { flex:1 1 auto; }
+.split-row .sp-amount { flex:0 0 auto; width:84px; text-align:right; font-variant-numeric:tabular-nums; }
+.split-row .sp-del {
+  flex:0 0 auto; width:32px; height:32px; border:none; border-radius:8px; cursor:pointer;
+  background:var(--surface-highest); color:var(--text-secondary); font-size:16px; line-height:1;
+}
+.split-row .sp-del:hover { background:var(--red-dim); color:var(--red); }
+.split-kwh {
+  font-size:11px; color:var(--text-muted); text-align:right;
+  margin:-3px 40px 8px 0; font-variant-numeric:tabular-nums;
+}
+.split-check {
+  margin-top:14px; padding:12px 14px; border-radius:var(--radius-sm);
+  font-size:12.5px; line-height:1.5; border:1px solid var(--border); background:var(--surface);
+}
+.split-check.is-complete { background:var(--green-dim); border-color:rgba(52,208,88,0.3); }
+.split-check.is-partial { background:rgba(240,180,41,0.12); border-color:rgba(240,180,41,0.3); }
+.split-check.is-over { background:var(--red-dim); border-color:rgba(192,57,43,0.3); }
+.split-check b { font-variant-numeric:tabular-nums; }

@@ -455,6 +455,22 @@ Vorabend ist normal); doppelt abgelegte Rechnungen fallen über die
 deterministische Charge-`id` raus (7); eine fehlende Heimladung und eine noch
 nicht aufgeteilte Sammelrechnung erscheinen als Warnung im Report (5, 3).
 
-**Noch offen:** Split-UI für Sammelrechnungen (Spec §8 – `splitAggregate()` in
-`calc.js` ist fertig und getestet, es fehlt die Eingabemaske), Vergleichsansicht
-über alle Trips (§9), Claude-Fallback (§7).
+### Sammelrechnung aufteilen (Spec §8)
+
+Der „aufteilen"-Knopf an einer `isAggregate`-Zeile öffnet eine Maske, in die
+die Einzelsessions aus der Anbieter-App kommen (Datum, Ort, **Betrag**). Die
+kWh rechnet `splitAggregate()` über `grossPerKwh` der Sammelrechnung zurück –
+nicht andersherum, denn die App nennt Beträge, keine Mengen.
+
+- Die Prüfsumme ist **keine harte Bedingung**: unvollständig ist ausdrücklich
+  erlaubt und der Normalfall (eine Monatsrechnung enthält Ladungen ausserhalb
+  der Reise, Edge Case 3). Nur *mehr* als der Rechnungsbetrag wird abgelehnt –
+  das ist ein Tippfehler.
+- Das Original landet in `trip.splitAggregates`, wird also nicht weggeworfen.
+  Zwei Gründe: „Aufteilung zurücknehmen" braucht es, und ohne den Eintrag
+  legte ein erneutes Ablegen derselben PDF die Sammelrechnung neben ihren
+  Splits noch einmal an – der Dedup-Check im Import prüft beide Mengen.
+- Die Zeilen werden aus dem DOM gelesen (`readSplitRows()`), nicht in einer
+  Modul-Variable gespiegelt – dasselbe Muster wie `readTariffRows()`.
+
+**Noch offen:** Vergleichsansicht über alle Trips (§9), Claude-Fallback (§7).

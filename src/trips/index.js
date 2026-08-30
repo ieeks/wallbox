@@ -12,11 +12,12 @@
 import { extractPdfLines, PdfTextError, PdfLoadError } from '../lib/pdf.js';
 import { parseInvoiceText, dedupeCharges } from '../parsers/index.js';
 import { getTrip, getTrips, loadTrips, saveTrip, deleteTrip, newTrip, isLoaded, lf } from './store.js';
-import { renderTripList, renderTripDetail, renderTripForm, tripCharges, tripSummary } from './ui.js';
+import { renderTripList, renderTripDetail, renderTripForm, splitRowHTML, renderSplitInfo, renderSplitCheck } from './ui.js';
 import { suggestLeg, estimateKwhFromMinutes, DEFAULT_ESTIMATE_KW } from './model.js';
-import { outsideWindow } from './calc.js';
+import { outsideWindow, splitAggregate } from './calc.js';
 
 let currentTripId = null;
+let splitContext = null;   // { tripId, chargeId } während der Aufteilung
 
 const toast = msg => (window.showToast ? window.showToast(msg) : console.log(msg));
 
@@ -149,6 +150,118 @@ async function tripEstimate(tripId, chargeId) {
 }
 
 // =====================================================================
+// SAMMELRECHNUNG AUFTEILEN (Spec §8)
+// =====================================================================
+function splitCharge() {
+  const trip = getTrip(splitContext?.tripId);
+  return (trip?.charges || []).find(c => c.id === splitContext?.chargeId) || null;
+}
+
+// Die Zeilen werden aus dem DOM gelesen statt in einer Modul-Variable
+// gespiegelt – dasselbe Muster wie readTariffRows() in script.js.
+function readSplitRows() {
+  return [...document.querySelectorAll('#split-rows .split-row')].map(row => ({
+    date: row.querySelector('.sp-date').value,
+    location: row.querySelector('.sp-loc').value.trim(),
+    grossTotal: parseFloat(String(row.querySelector('.sp-amount').value).replace(',', '.')),
+  })).map(r => ({ ...r, grossTotal: Number.isFinite(r.grossTotal) ? r.grossTotal : 0 }));
+}
+
+function tripOpenSplit(tripId, chargeId) {
+  splitContext = { tripId, chargeId };
+  const c = splitCharge();
+  if (!c) return;
+
+  // Zwei leere Zeilen als Startpunkt – eine Sammelrechnung deckt praktisch
+  // nie genau einen Ladevorgang ab.
+  document.getElementById('split-rows').innerHTML = splitRowHTML() + splitRowHTML();
+  renderSplitInfo(c);
+  tripSplitRecalc();
+  document.getElementById('trip-split').classList.add('show');
+}
+
+function tripCloseSplit() {
+  document.getElementById('trip-split').classList.remove('show');
+  splitContext = null;
+}
+
+function tripAddSplitRow() {
+  document.getElementById('split-rows').insertAdjacentHTML('beforeend', splitRowHTML());
+  tripSplitRecalc();
+}
+
+function tripRemoveSplitRow(btn) {
+  const row = btn.closest('.split-row');
+  const kwhZeile = row.nextElementSibling;
+  if (kwhZeile && kwhZeile.classList.contains('split-kwh')) kwhZeile.remove();
+  row.remove();
+  tripSplitRecalc();
+}
+
+// Läuft bei jeder Eingabe: die zurückgerechnete Menge steht direkt an der
+// Zeile, damit sichtbar ist, was der €/kWh-Satz aus dem Betrag macht.
+function tripSplitRecalc() {
+  const c = splitCharge();
+  if (!c) return;
+  const rate = c.grossPerKwh || 0;
+
+  [...document.querySelectorAll('#split-rows .split-row')].forEach(row => {
+    const betrag = parseFloat(String(row.querySelector('.sp-amount').value).replace(',', '.'));
+    const ziel = row.nextElementSibling;
+    if (!ziel || !ziel.classList.contains('split-kwh')) return;
+    // Über fmt() aus script.js, damit die Zahl wie überall sonst in der App
+    // mit Dezimalkomma steht.
+    const f = lf().fmt || ((n, d) => Number(n).toFixed(d));
+    ziel.textContent = Number.isFinite(betrag) && betrag > 0 && rate > 0
+      ? `≈ ${f(betrag / rate, 2)} kWh`
+      : '';
+  });
+
+  renderSplitCheck(c, readSplitRows());
+}
+
+async function tripApplySplit() {
+  const trip = getTrip(splitContext?.tripId);
+  const aggregat = splitCharge();
+  if (!trip || !aggregat) return;
+
+  const zeilen = readSplitRows().filter(r => r.grossTotal > 0 && r.date);
+  if (!zeilen.length) return toast('Bitte mindestens einen Ladevorgang mit Datum und Betrag eintragen');
+
+  const r = splitAggregate(aggregat, zeilen);
+  if (r.difference > 0.05) {
+    // Zu viel zugeordnet ist ein Tippfehler, zu wenig ist erlaubt.
+    return toast(`${r.sumSplits.toFixed(2)} € übersteigen die Rechnung um ${Math.abs(r.difference).toFixed(2)} €`);
+  }
+
+  // Das Original wird aufgehoben, nicht weggeworfen: sonst legt ein erneutes
+  // Ablegen derselben PDF die Sammelrechnung neben den Splits noch einmal an.
+  trip.splitAggregates = { ...(trip.splitAggregates || {}), [aggregat.id]: aggregat };
+  trip.charges = [
+    ...(trip.charges || []).filter(c => c.id !== aggregat.id),
+    ...r.charges.map(c => ({ ...c, leg: suggestLeg(c.date, trip) })),
+  ];
+  await saveTrip(trip);
+
+  tripCloseSplit();
+  refresh();
+  toast(`${r.charges.length} Ladevorgang${r.charges.length === 1 ? '' : 'e'} übernommen`
+    + (r.complete ? '' : ` · ${Math.abs(r.difference).toFixed(2)} € blieben draussen`));
+}
+
+async function tripUndoSplit(tripId, aggregateId) {
+  const trip = getTrip(tripId);
+  const original = (trip?.splitAggregates || {})[aggregateId];
+  if (!trip || !original) return;
+
+  trip.charges = [...(trip.charges || []).filter(c => c.splitFrom !== aggregateId), original];
+  delete trip.splitAggregates[aggregateId];
+  await saveTrip(trip);
+  refresh();
+  toast('Aufteilung zurückgenommen');
+}
+
+// =====================================================================
 // PDF-IMPORT
 // =====================================================================
 function initDropZone() {
@@ -199,7 +312,12 @@ async function importFiles(files) {
   }
 
   // Edge Case 7: dieselbe Rechnung zweimal fallen gelassen.
-  const vorhanden = new Set((trip.charges || []).map(c => c.id));
+  // Auch bereits aufgeteilte Sammelrechnungen zählen als vorhanden – sonst
+  // käme das Original beim erneuten Ablegen neben seinen Splits zurück.
+  const vorhanden = new Set([
+    ...(trip.charges || []).map(c => c.id),
+    ...Object.keys(trip.splitAggregates || {}),
+  ]);
   const frisch = dedupeCharges(neu).filter(c => !vorhanden.has(c.id));
   const doppelt = neu.length - frisch.length;
 
@@ -238,6 +356,8 @@ async function importFiles(files) {
 Object.assign(window, {
   tripsOpenList, tripOpen, tripNew, tripEdit, tripCloseForm, tripSaveForm,
   tripAskDelete, tripSetLeg, tripRemoveCharge, tripToggleHome, tripEstimate,
+  tripOpenSplit, tripCloseSplit, tripAddSplitRow, tripRemoveSplitRow,
+  tripSplitRecalc, tripApplySplit, tripUndoSplit,
 });
 
 // Die Trip-Liste wird beim Start nur vorgerendert (aus localStorage), damit

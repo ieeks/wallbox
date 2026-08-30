@@ -429,6 +429,22 @@
   </div>
 </div>
 
+<!-- SPLIT MODAL – Sammelrechnung auf Einzelsessions aufteilen -->
+<div class="modal-overlay" id="trip-split" onclick="if(event.target===this)tripCloseSplit()">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <h3>Sammelrechnung aufteilen</h3>
+    <div class="setting-hint" id="split-info"></div>
+    <div id="split-rows"></div>
+    <button type="button" class="tariff-add-btn" onclick="tripAddSplitRow()">+ Ladevorgang hinzufügen</button>
+    <div class="split-check" id="split-check"></div>
+    <div style="display:flex;gap:10px;margin-top:20px;">
+      <button class="ip-btn-cancel" style="flex:1;padding:16px;border:none;border-radius:12px;font-family:Inter;font-weight:600;font-size:14px;cursor:pointer;background:var(--surface-highest);color:var(--text);" onclick="tripCloseSplit()">Abbrechen</button>
+      <button class="btn-save" style="flex:2;margin-top:0;" onclick="tripApplySplit()">Übernehmen</button>
+    </div>
+  </div>
+</div>
+
 <script src="./script.js?v=1.16.0"></script>
 
 <!-- Brücke zu script.js: `charges`, `settings`, `db` & Co. sind dort mit

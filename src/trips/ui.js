@@ -224,8 +224,12 @@ function renderStops(trip, r) {
                     onchange="tripSetLeg('${esc(trip.id)}','${esc(c.id)}',this.value)">
               ${LEGS.map(l => `<option value="${l}"${c.leg === l ? ' selected' : ''}>${LEG_LABELS[l]}</option>`).join('')}
             </select>
-            ${geschaetzt && !c.isHome ? `
+            ${geschaetzt && !c.isHome && !c.isAggregate ? `
               <button class="tr-btn" onclick="tripEstimate('${esc(trip.id)}','${esc(c.id)}')">kWh schätzen</button>` : ''}
+            ${c.isAggregate ? `
+              <button class="tr-btn" onclick="tripOpenSplit('${esc(trip.id)}','${esc(c.id)}')">aufteilen</button>` : ''}
+            ${c.splitFrom ? `
+              <button class="tr-btn" onclick="tripUndoSplit('${esc(trip.id)}','${esc(c.splitFrom)}')">Aufteilung zurücknehmen</button>` : ''}
             ${!c.isHome ? `
               <button class="tr-btn is-del" onclick="tripRemoveCharge('${esc(trip.id)}','${esc(c.id)}')">entfernen</button>` : `
               <button class="tr-btn is-del" onclick="tripToggleHome('${esc(trip.id)}','${esc(c.id)}')">entfernen</button>`}
@@ -359,6 +363,65 @@ function shiftDate(iso, days) {
 // =====================================================================
 // FORMULAR (anlegen / bearbeiten)
 // =====================================================================
+// =====================================================================
+// SAMMELRECHNUNG AUFTEILEN (Spec §4.2, Edge Cases 2 und 3)
+// =====================================================================
+// Eingegeben werden die Einzelsessions aus der Anbieter-App (Datum, Ort,
+// Betrag) – die kWh rechnet das Tool über den €/kWh-Satz der Rechnung
+// zurück. Bewusst nicht andersherum: die App nennt Beträge, keine Mengen.
+export function splitRowHTML(row = {}) {
+  return `
+    <div class="split-row">
+      <input class="sp-date" type="date" value="${esc(row.date || '')}" oninput="tripSplitRecalc()"/>
+      <input class="sp-loc" type="text" placeholder="Ort" value="${esc(row.location || '')}"/>
+      <input class="sp-amount" type="number" step="0.01" min="0" inputmode="decimal"
+             placeholder="0,00" value="${row.grossTotal ?? ''}" oninput="tripSplitRecalc()"/>
+      <button type="button" class="sp-del" onclick="tripRemoveSplitRow(this)" aria-label="Zeile entfernen">×</button>
+    </div>
+    <div class="split-kwh"></div>`;
+}
+
+export function renderSplitInfo(charge) {
+  const el = document.getElementById('split-info');
+  if (!el) return;
+  el.innerHTML = `
+    Rechnung über <b>${fmt(charge.grossTotal)} €</b> / ${fmt(charge.kwh ?? 0, 3)} kWh
+    (${fmt(charge.grossPerKwh ?? 0, 4)} €/kWh)${charge.periodStart ? `, Zeitraum ${fmtDate(charge.periodStart)} – ${fmtDate(charge.periodEnd)}` : ''}.<br>
+    Trage die Ladevorgänge ein, die zu dieser Reise gehören. Was nicht dazugehört,
+    lässt du einfach weg – die Rechnung muss nicht vollständig aufgeteilt werden.`;
+}
+
+// Prüfsumme: bewusst gegen die Summe der EINGEGEBENEN Sessions, nicht als
+// harte Bedingung. Eine Monatsrechnung enthält regelmässig Ladungen
+// ausserhalb der Reise (Edge Case 3); unvollständig ist erlaubt, zu viel
+// nicht.
+export function renderSplitCheck(charge, rows) {
+  const el = document.getElementById('split-check');
+  if (!el) return;
+
+  const rate = charge.grossPerKwh || 0;
+  const summe = rows.reduce((s, r) => s + (r.grossTotal || 0), 0);
+  const rechnung = charge.grossTotal ?? 0;
+  const rest = Math.round((rechnung - summe) * 100) / 100;
+  const kwh = rate > 0 ? summe / rate : 0;
+
+  let klasse = 'is-partial';
+  let text;
+  if (Math.abs(rest) <= 0.05) {
+    klasse = 'is-complete';
+    text = `<b>${fmt(summe)} €</b> zugeordnet · ${fmt(kwh, 2)} kWh — Rechnung vollständig aufgeteilt.`;
+  } else if (rest < 0) {
+    klasse = 'is-over';
+    text = `<b>${fmt(summe)} €</b> zugeordnet · ${fmt(kwh, 2)} kWh — das sind
+      <b>${fmt(Math.abs(rest))} €</b> mehr, als die Rechnung hergibt. Bitte Beträge prüfen.`;
+  } else {
+    text = `<b>${fmt(summe)} €</b> zugeordnet · ${fmt(kwh, 2)} kWh —
+      <b>${fmt(rest)} €</b> bleiben ausserhalb der Reise.`;
+  }
+  el.className = `split-check ${klasse}`;
+  el.innerHTML = text;
+}
+
 export function renderTripForm(trip) {
   const neu = !trip.title && !trip.dateStart;
   document.getElementById('trip-form-title').textContent = neu ? 'Neuer Trip' : 'Trip bearbeiten';
