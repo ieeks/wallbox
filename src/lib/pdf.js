@@ -22,10 +22,54 @@ export class PdfLoadError extends Error {
   constructor(message, cause) { super(message); this.name = 'PdfLoadError'; this.cause = cause; }
 }
 
+// =====================================================================
+// Zwei Bausteine, die pdf.js voraussetzt und Safari erst ab 17.4 mitbringt
+// =====================================================================
+// Ohne sie bricht schon der erste Import ab. Auf einem iPhone mit iOS < 17.4
+// sah das so aus:
+//
+//   undefined is not a function (near '...t of e...')
+//
+// Der Schnipsel stammt aus `for await (const t of e)` in getTextContent() –
+// pdf.js iteriert dort asynchron über einen ReadableStream. Beide Lücken
+// sind klein und exakt definiert, deshalb werden sie hier geschlossen,
+// statt auf eine ältere pdf.js-Fassung zurückzugehen. Der Legacy-Build
+// hilft übrigens nicht: er benutzt dieselben APIs.
+//
+// Die Polyfills laufen erst beim Öffnen der Trip-Ansicht und nur, wenn
+// wirklich etwas fehlt – der Rest der App merkt davon nichts.
+export function applyPdfPolyfills(global = globalThis) {
+  if (typeof global.Promise?.withResolvers !== 'function') {
+    global.Promise.withResolvers = function withResolvers() {
+      let resolve, reject;
+      const promise = new global.Promise((res, rej) => { resolve = res; reject = rej; });
+      return { promise, resolve, reject };
+    };
+  }
+
+  const Stream = global.ReadableStream;
+  if (Stream && typeof Stream.prototype[Symbol.asyncIterator] !== 'function') {
+    Stream.prototype[Symbol.asyncIterator] = function asyncIterator() {
+      const reader = this.getReader();
+      return {
+        // reader.read() liefert bereits { value, done } – genau das
+        // Iterator-Protokoll.
+        next: () => reader.read(),
+        async return(value) {
+          await reader.cancel(value);
+          return { done: true, value };
+        },
+        [Symbol.asyncIterator]() { return this; },
+      };
+    };
+  }
+}
+
 let pdfjsPromise = null;
 
 export function loadPdfJs() {
   if (!pdfjsPromise) {
+    applyPdfPolyfills();
     pdfjsPromise = import(/* @vite-ignore */ `${PDFJS_BASE}pdf.min.mjs`)
       .then(mod => {
         const lib = mod.default ?? mod;

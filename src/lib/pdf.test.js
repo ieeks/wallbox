@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { itemsToLines } from './pdf.js';
+import { itemsToLines, applyPdfPolyfills } from './pdf.js';
 
 // pdf.js-Textitem nachbilden: transform[4] = x, transform[5] = y.
 const item = (str, x, y, width, height = 8) => ({
@@ -49,5 +49,61 @@ describe('itemsToLines', () => {
   it('verkraftet eine leere Eingabe', () => {
     expect(itemsToLines([])).toEqual([]);
     expect(itemsToLines(undefined)).toEqual([]);
+  });
+});
+
+// Auf einem iPhone mit iOS < 17.4 brach der Import mit
+// „undefined is not a function (near '...t of e...')" ab. Der Schnipsel
+// stammt aus `for await (const t of e)` in getTextContent(): pdf.js
+// iteriert dort asynchron über einen ReadableStream, was Safari erst ab
+// 17.4 kann – ebenso wie Promise.withResolvers.
+describe('applyPdfPolyfills', () => {
+  const frischesGlobal = ({ withResolvers, asyncIterator }) => {
+    class FakeStream {}
+    if (asyncIterator) FakeStream.prototype[Symbol.asyncIterator] = function () {};
+    const P = class extends Promise {};
+    if (withResolvers) P.withResolvers = () => 'original';
+    return { Promise: P, ReadableStream: FakeStream };
+  };
+
+  it('ergänzt Promise.withResolvers, wenn es fehlt', async () => {
+    const g = frischesGlobal({ withResolvers: false, asyncIterator: true });
+    applyPdfPolyfills(g);
+    const { promise, resolve } = g.Promise.withResolvers();
+    resolve(42);
+    await expect(promise).resolves.toBe(42);
+  });
+
+  it('ergänzt die Async-Iteration über ReadableStream', async () => {
+    const g = frischesGlobal({ withResolvers: true, asyncIterator: false });
+    applyPdfPolyfills(g);
+    expect(typeof g.ReadableStream.prototype[Symbol.asyncIterator]).toBe('function');
+
+    // Über den Reader gelesen muss dasselbe herauskommen wie nativ.
+    const stueck = ['a', 'b'];
+    const stream = Object.create(g.ReadableStream.prototype);
+    stream.getReader = () => {
+      let i = 0;
+      return {
+        read: async () => (i < stueck.length ? { value: stueck[i++], done: false } : { done: true }),
+        cancel: async () => {},
+      };
+    };
+    const gelesen = [];
+    for await (const s of stream) gelesen.push(s);
+    expect(gelesen).toEqual(['a', 'b']);
+  });
+
+  it('lässt vorhandene Implementierungen unangetastet', () => {
+    const g = frischesGlobal({ withResolvers: true, asyncIterator: true });
+    const vorher = g.ReadableStream.prototype[Symbol.asyncIterator];
+    applyPdfPolyfills(g);
+    expect(g.Promise.withResolvers()).toBe('original');
+    expect(g.ReadableStream.prototype[Symbol.asyncIterator]).toBe(vorher);
+  });
+
+  it('kommt ohne ReadableStream zurecht', () => {
+    const g = { Promise: class extends Promise {}, ReadableStream: undefined };
+    expect(() => applyPdfPolyfills(g)).not.toThrow();
   });
 });
