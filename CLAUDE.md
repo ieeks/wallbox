@@ -18,7 +18,7 @@ sehen Nutzer nach einem Deploy noch die alte Version.
 
 ---
 
-## Aktuelle Version: 1.16.0
+## Aktuelle Version: 1.16.1
 
 ---
 
@@ -303,6 +303,17 @@ Entwicklungsinfrastruktur (Vitest, pdf.js für das Fixture-Werkzeug).
 **pdf.js** kommt per Dynamic Import von jsDelivr, erst beim Öffnen der
 Trip-Ansicht (`src/lib/pdf.js`). Version ist in `PDFJS_VERSION` gepinnt. Der
 Start des Ladefuchs wird dadurch nicht langsamer.
+
+**Zwei Polyfills für iOS < 17.4 (`applyPdfPolyfills`, ab v1.16.1).** pdf.js
+setzt `Promise.withResolvers` und die Async-Iteration über `ReadableStream`
+voraus; Safari kann beides erst ab 17.4. Auf einem älteren iPhone brach schon
+der erste Import ab, mit der irreführenden Meldung
+`undefined is not a function (near '...t of e...')` – der Schnipsel stammt aus
+`for await (const t of e)` in `getTextContent()`. Der Legacy-Build von pdf.js
+hilft **nicht**, er benutzt dieselben APIs. Beide Lücken sind klein und exakt
+definiert, deshalb werden sie geschlossen, statt auf eine ältere pdf.js-Fassung
+zurückzugehen. Die Polyfills laufen in `loadPdfJs()`, also erst beim Öffnen der
+Trip-Ansicht und nur, wenn wirklich etwas fehlt.
 
 ### Textextraktion (`itemsToLines`)
 
