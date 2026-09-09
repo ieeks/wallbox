@@ -80,7 +80,7 @@ Die GitHub Action `.github/workflows/goe-import.yml` läuft alle 15 Minuten und 
 - `car === 1` (idle) + `wh > 10` + neuer `lch`-Wert → abgeschlossene Ladung erkannt
 - Exakter Session-Zeitpunkt via `rbt` + `lccfc` (ms seit Boot) → SNAP-Erkennung zuverlässig
 - Aktive Ladezeit aus `cdi.value` (ms) → `dauer`-Feld im Format `H:MM:SS`
-- Duplikat-Schutz: `lch` wird im Charge-Eintrag gespeichert; gelöschte Einträge können neu importiert werden
+- Duplikat-Schutz: Session-Kennung aus Seriennummer + Gesamtzählerstand; gelöschte Sessions bleiben über Löschmarker gesperrt
 - Kosten aus Firestore-Settings (`defaultEnergy`, `gebrauchsabgabe`, `ust`) – übernimmt App-Einstellungen automatisch
 - `source: 'go-e-auto'` zur Unterscheidung von manuellen Einträgen
 
@@ -103,3 +103,20 @@ Keine Build-Schritte, kein Framework – reines HTML/CSS/JS.
 ## Lizenz
 
 Private Nutzung.
+
+## Zuverlässiger Ladungs-Sync (v1.16.2)
+
+Browser und Auto-Import führen Änderungen in Firestore-Transaktionen zusammen.
+Neue Ladungen werden nicht durch einen älteren Gerätestand überschrieben.
+Löschungen bleiben in einem eigenen Dokument `haushalte/charge-deletions` erhalten;
+Offline-Änderungen werden lokal vorgemerkt und bei Online-/Tab-Rückkehr erneut gesendet.
+Beim Löschen eines Duplikats bleibt ein noch vorhandenes Original bestehen.
+
+Nach dem Einspielen die App auf **allen Geräten neu laden**. Alte offene Tabs
+verwenden noch den alten Sync. Löschungen von vor diesem Update sind rückwirkend
+nicht erkennbar. Bestehende verdächtige Duplikate werden nicht pauschal entfernt.
+Alte Sessions ohne Zählerkennung bleiben beim Reboot nur eingeschränkt zuordenbar.
+
+`npm test`: inklusive Regressionstests für zwei Gerätestände, Offline/Reload,
+Änderungen während des Syncs, parallelen Import, Reboot und Löschschutz.
+Die Tests verwenden lokale Firestore-/go-e-Doubles, keine produktiven Zugangsdaten.

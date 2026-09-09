@@ -142,6 +142,41 @@ settings = {
 };
 let currentPeriod = 'month';
 
+const SYNC_OUTBOX = 'lf_charge_outbox';
+const SYNC_DELETED = 'lf_charge_deleted';
+const SYNC_INITIALIZED = 'lf_charge_sync_v2';
+const syncCopy = ChargeSync.copy;
+let syncBaseline = syncCopy({ charges, settings });
+let syncPromise = null;
+
+function readSyncList(key) {
+  const value = JSON.parse(localStorage.getItem(key) || '[]');
+  if (!Array.isArray(value)) throw new Error('Ungültiger lokaler Sync-Stand');
+  return value;
+}
+
+function appendSyncOperations(ops) {
+  const queue = readSyncList(SYNC_OUTBOX);
+  for (const op of ops) queue.push({ ...op, opId: crypto.randomUUID() });
+  localStorage.setItem(SYNC_OUTBOX, JSON.stringify(queue));
+}
+
+function captureSyncChanges() {
+  // Save pending mutations BEFORE the local snapshot: survive offline/reload.
+  appendSyncOperations(ChargeSync.changes(syncBaseline, { charges, settings }));
+  syncBaseline = syncCopy({ charges, settings });
+  localStorage.setItem('lf_charges', JSON.stringify(charges));
+  localStorage.setItem('lf_settings', JSON.stringify(settings));
+}
+
+// One-time legacy adoption: missing local entries may be uploaded, but must never
+// overwrite a newer cloud entry with the same ID. Tombstones still take priority.
+if (!localStorage.getItem(SYNC_INITIALIZED)) {
+  appendSyncOperations(charges.map(entry => ({ type: 'seed', entry })));
+  localStorage.setItem(SYNC_INITIALIZED, '1');
+}
+
+
 // =====================================================================
 // AUFKLAPPBARE DASHBOARD-SEKTIONEN
 // =====================================================================
@@ -210,8 +245,6 @@ function applyCollapsedState() {
 // PERSIST (localStorage + Firestore)
 // =====================================================================
 function persist() {
-  localStorage.setItem('lf_charges', JSON.stringify(charges));
-  localStorage.setItem('lf_settings', JSON.stringify(settings));
   syncToCloud();
 }
 
@@ -303,79 +336,66 @@ function setThemeFromToggle(isLight) {
 }
 
 async function syncToCloud() {
-  if(!firebaseReady) return;
+  captureSyncChanges();
+  if (!firebaseReady) { setSyncStatus('offline'); return false; }
+  if (syncPromise) return syncPromise;
   setSyncStatus('syncing');
-  try {
-    await db.collection('haushalte').doc(HOUSEHOLD_DOC).set({
-      charges: charges,
-      settings: settings,
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-    });
-    setSyncStatus('online');
-  } catch(e) {
-    console.error('Sync error:', e);
-    setSyncStatus('offline');
-  }
+  syncPromise = (async () => {
+    try {
+      do {
+        const batch = readSyncList(SYNC_OUTBOX);
+        const ref = db.collection('haushalte').doc(HOUSEHOLD_DOC);
+        // Separate document: old clients' .set() cannot erase deletion markers.
+        const deletedRef = db.collection('haushalte').doc('charge-deletions');
+        const localDeleted = readSyncList(SYNC_DELETED);
+        const defaults = syncCopy(settings);
+        const result = await db.runTransaction(async tx => {
+          const doc = await tx.get(ref);
+          const tombstones = await tx.get(deletedRef);
+          const data = doc.exists ? doc.data() : { settings: defaults };
+          const markers = [...localDeleted, ...(tombstones.exists ? tombstones.data().entries || [] : [])];
+          const next = ChargeSync.apply(data, markers, batch);
+          tx.set(ref, { charges: next.charges, settings: next.settings,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+          tx.set(deletedRef, { entries: next.deleted });
+          return next;
+        });
+        // A user may have edited/deleted again while the transaction was pending.
+        // Acknowledge ONLY this batch; reapply newer operations before rendering.
+        captureSyncChanges();
+        const acknowledged = new Set(batch.map(op => op.opId));
+        const pending = readSyncList(SYNC_OUTBOX).filter(op => !acknowledged.has(op.opId));
+        localStorage.setItem(SYNC_OUTBOX, JSON.stringify(pending));
+        localStorage.setItem(SYNC_DELETED, JSON.stringify(result.deleted));
+        const visible = ChargeSync.apply(result, result.deleted, pending);
+        charges = visible.charges;
+        settings = { ...settings, ...visible.settings };
+        syncBaseline = syncCopy({ charges, settings });
+        localStorage.setItem('lf_charges', JSON.stringify(charges));
+        localStorage.setItem('lf_settings', JSON.stringify(settings));
+      } while (readSyncList(SYNC_OUTBOX).length);
+      setSyncStatus('online');
+      refreshDashboard();
+      return true;
+    } catch (e) {
+      console.error('Sync error (Änderungen bleiben lokal vorgemerkt):', e);
+      setSyncStatus('offline');
+      return false;
+    } finally { syncPromise = null; }
+  })();
+  return syncPromise;
 }
 
 function deduplicateCharges(arr) {
-  // Zwei Keys parallel prüfen: date+time+kwh fängt Wallbox-Reboot-Duplikate
-  // (gleiche Session, neuer lch) ab; lch fängt manuell editierte kWh-Werte ab.
-  //
-  // Die Uhrzeit MUSS Teil des Keys sein: ohne sie ist eine zweite echte Ladung
-  // am selben Tag mit ähnlicher kWh-Menge (z.B. 12,00 früh / 12,04 abends) von
-  // einem Duplikat nicht unterscheidbar und wird beim Start still gelöscht –
-  // inkl. Rückschreiben in die Cloud, also unwiederbringlich.
-  // Preis dafür: ein Reboot-Duplikat, dessen Zeitpunkt neu berechnet wurde,
-  // rutscht durch. Das ist sichtbar und per Swipe oder „Duplikate entfernen"
-  // korrigierbar – ein still gelöschter Eintrag nicht.
-  const seen = new Set();
-  return arr.filter(c => {
-    const dateKwhKey = `dk_${c.date}_${c.time || '-'}_${Math.round((c.kwh ?? 0) * 10)}`;
-    const lchKey = c.lch ? `lch_${c.lch}` : null;
-    if (seen.has(dateKwhKey)) return false;
-    if (lchKey && seen.has(lchKey)) return false;
-    seen.add(dateKwhKey);
-    if (lchKey) seen.add(lchKey);
-    return true;
-  });
+  const kept = [];
+  for (const c of arr) {
+    if (!kept.some(k => k.id === c.id || ChargeSync.sameSession(k, c))) kept.push(c);
+  }
+  return kept;
 }
 
 async function loadFromCloud() {
-  if(!firebaseReady) return;
-  setSyncStatus('syncing');
-  try {
-    const doc = await db.collection('haushalte').doc(HOUSEHOLD_DOC).get();
-    if(doc.exists) {
-      const data = doc.data();
-      if(data.settings) settings = {...settings, ...data.settings};
-      if(data.charges && data.charges.length > 0) {
-        const cloudIds = new Set(data.charges.map(c => c.id));
-        const localOnlyEntries = charges.filter(c => !cloudIds.has(c.id));
-        const merged = [...data.charges, ...localOnlyEntries];
-        const deduped = deduplicateCharges(merged);
-        deduped.sort((a,b) => b.date.localeCompare(a.date));
-        charges = deduped;
-        const needsWrite = localOnlyEntries.length > 0 || deduped.length < merged.length;
-        if(needsWrite) {
-          console.log(`Cloud sync: ${localOnlyEntries.length} lokal-only, ${merged.length - deduped.length} Duplikate entfernt → zurückschreiben`);
-        }
-        localStorage.setItem('lf_charges', JSON.stringify(charges));
-        localStorage.setItem('lf_settings', JSON.stringify(settings));
-        if(needsWrite) await syncToCloud();
-      } else {
-        localStorage.setItem('lf_charges', JSON.stringify(charges));
-        localStorage.setItem('lf_settings', JSON.stringify(settings));
-        await syncToCloud();
-      }
-    } else {
-      await syncToCloud();
-    }
-    setSyncStatus('online');
-  } catch(e) {
-    console.error('Load error:', e);
-    setSyncStatus('offline');
-  }
+  return syncToCloud();
 }
 
 function setSyncStatus(status) {
@@ -405,27 +425,25 @@ async function cleanupDuplicates() {
 
 async function clearChargesOnly() {
   charges = [];
-  localStorage.setItem('lf_charges', JSON.stringify([]));
-  if (firebaseReady) {
-    try {
-      await db.collection('haushalte').doc(HOUSEHOLD_DOC).set(
-        { charges: [], updatedAt: firebase.firestore.FieldValue.serverTimestamp() },
-        { merge: true }
-      );
-    } catch(e) { console.error(e); }
-  }
+  await syncToCloud();
   toggleSettings();
   refreshDashboard();
   showToast('Ladedaten gelöscht – Einstellungen beibehalten');
 }
 
 async function clearAllData() {
-  if(firebaseReady) {
-    try {
-      await db.collection('haushalte').doc(HOUSEHOLD_DOC).delete();
-    } catch(e) { console.error(e); }
+  // Keep deletion history and the offline outbox, otherwise another device can
+  // resurrect everything. Reset only this app's settings, never localStorage.clear().
+  charges = [];
+  const synced = await syncToCloud();
+  if (!synced) {
+    showToast('Löschung lokal vorgemerkt – Zurücksetzen nach erfolgreichem Sync erneut versuchen');
+    refreshDashboard();
+    return;
   }
-  localStorage.clear();
+  await db.collection('haushalte').doc(HOUSEHOLD_DOC).set({ settings: {} }, { merge: true });
+  localStorage.removeItem('lf_settings');
+  localStorage.removeItem('lf_collapsed');
   location.reload();
 }
 
@@ -451,7 +469,7 @@ async function migrateSnapTiming() {
   if(changed > 0) {
     console.log(`SNAP-Migration: ${changed} Eintrag/Einträge korrigiert`);
     localStorage.setItem('lf_charges', JSON.stringify(charges));
-    if(firebaseReady) await syncToCloud();
+    await syncToCloud();
   }
 }
 
@@ -473,7 +491,7 @@ async function migrateTariffPrices() {
   if(changed > 0) {
     console.log(`Tarif-Migration: ${changed} Eintrag/Einträge angepasst`);
     localStorage.setItem('lf_charges', JSON.stringify(charges));
-    if(firebaseReady) await syncToCloud();
+    await syncToCloud();
   }
 }
 
@@ -857,6 +875,9 @@ function confirmDelete() {
 
   document.getElementById('confirm-delete').classList.remove('show');
 
+  const deletedId = pendingDeleteId;
+  pendingDeleteId = null;
+
   // Animate out
   if(item) item.classList.add('deleting');
   if(wrap) {
@@ -870,8 +891,7 @@ function confirmDelete() {
   }
 
   setTimeout(() => {
-    charges = charges.filter(c => c.id !== pendingDeleteId);
-    pendingDeleteId = null;
+    charges = charges.filter(c => c.id !== deletedId);
     persist();
     refreshDashboard();
     showToast('Eintrag gelöscht');
@@ -2368,3 +2388,8 @@ refreshDashboard();
 applyCollapsedState();   // statische Sektionen im HTML nachziehen
 fetchBenzinpreis();
 startLiveStatus();
+
+window.addEventListener('online', () => syncToCloud());
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') syncToCloud();
+});

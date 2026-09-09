@@ -2,6 +2,7 @@
 // Läuft als GitHub Action alle 15 min
 
 import admin from 'firebase-admin';
+import '../../src/charge-sync.js';
 
 // =====================================================================
 // WIEN_TARIFFS + calcTotal (identisch mit script.js)
@@ -63,10 +64,10 @@ admin.initializeApp({
 
 const db = admin.firestore();
 const docRef = db.collection('haushalte').doc('haushalt');
+const deletedRef = db.collection('haushalte').doc('charge-deletions');
 
 // Peak-Tracker bewusst als EIGENES Dokument, nicht als Feld in 'haushalt':
-// syncToCloud() in script.js schreibt mit .set() ohne {merge:true} und würde
-// jedes Feld, das die App nicht kennt, beim nächsten Nutzer-Sync löschen.
+// Unabhängig vom Haushalt-Sync; alte Browser-Versionen ersetzen dessen Dokument.
 const peakRef = db.collection('haushalte').doc('goe-peak-tracker');
 
 // =====================================================================
@@ -106,14 +107,12 @@ async function trackPeak(powerW, wh, rbt) {
   );
 }
 
-// Liest den Peak und löscht den Tracker, damit er nicht in die nächste Session
-// überläuft – auch dann, wenn der Import danach als Duplikat abbricht.
+// Liest den Peak. Erst die erfolgreiche Import-Transaktion löscht den Tracker.
 async function consumePeak() {
   try {
     const snap = await peakRef.get();
     if (!snap.exists) return null;
     const data = snap.data();
-    await peakRef.delete();
     return data;
   } catch (e) {
     console.log(`Peak-Tracker nicht lesbar (${e.message}) – maxKw bleibt leer.`);
@@ -220,10 +219,11 @@ async function run() {
     return;
   }
 
-  // Peak sofort einlesen und Tracker leeren – vor allen weiteren Abbruchpfaden.
+  // Peak für den Import lesen; bei Fehlern bleibt er für den nächsten Lauf erhalten.
   const peak = await consumePeak();
 
   if (wh < 10) {
+    await peakRef.delete();
     console.log(`wh=${wh} zu gering – ignoriert.`);
     return;
   }
@@ -239,25 +239,20 @@ async function run() {
   // 4. Firestore: bestehende Daten + Settings lesen
   const docSnap = await docRef.get();
   const data = docSnap.exists ? docSnap.data() : {};
-  const existing = data.charges || [];
   const fsSettings = data.settings || {};
   const energyPrice  = fsSettings.defaultEnergy     || DEFAULT_ENERGY_PRICE;
   const gab_pct      = fsSettings.gebrauchsabgabe   || WIEN_TARIFFS.gebrauchsabgabe_pct;
   const ust_pct      = fsSettings.ust               || WIEN_TARIFFS.ust_pct;
   console.log(`settings: energyPrice=${energyPrice} | gab=${gab_pct}% | ust=${ust_pct}%`);
 
-  // Duplikat-Check 1: lch (primär)
-  if (existing.some(c => c.lch === lch)) {
-    console.log(`Session bereits in charges (lch=${lch}) – übersprungen.`);
-    return;
-  }
-
   // Datum/Uhrzeit: exakter Session-Endzeitpunkt via rbt + lccfc
   // lccfc = ms seit Boot als die Ladung endete → now - (rbt - lccfc) = echter Endzeitpunkt
   const now = new Date();
-  const sessionEnd = (rbt !== null && lccfc !== null)
-    ? new Date(now.getTime() - (rbt - lccfc))
-    : now;
+  if (!Number.isFinite(rbt) || !Number.isFinite(lccfc) || lccfc < 0 || lccfc > rbt) {
+    console.log('::warning::Kein gültiges Ladeende (z.B. nach Neustart) – kein geratener Import.');
+    return;
+  }
+  const sessionEnd = new Date(now.getTime() - (rbt - lccfc));
   const viennaFormatter = new Intl.DateTimeFormat('sv-SE', {
     timeZone: 'Europe/Vienna',
     year: 'numeric', month: '2-digit', day: '2-digit',
@@ -266,19 +261,6 @@ async function run() {
   const [date, time] = viennaFormatter.format(sessionEnd).split(' ');
   // date = YYYY-MM-DD, time = HH:MM
   console.log(`sessionEnd=${sessionEnd.toISOString()} | date=${date} | time=${time}`);
-
-  // Duplikat-Check 2: Datum + kWh – ausschliesslich gegen Einträge OHNE lch
-  // (CSV-Import, manuell). Einträge mit lch sind bereits durch Check 1 abgedeckt.
-  // Ohne die !c.lch-Einschränkung würde eine echte zweite Session am selben Tag
-  // mit ähnlicher kWh-Menge nie importiert – sie taucht dann nirgends auf und
-  // ist im Gegensatz zu einem Duplikat auch nicht nachträglich zu retten.
-  // Zeitvergleich geht hier nicht: CSV speichert den Steckbeginn, dieser Import
-  // den Ladeschluss.
-  const dupOhneLch = existing.find(c => !c.lch && c.date === date && Math.abs((c.kwh ?? 0) - kwh) < 0.05);
-  if (dupOhneLch) {
-    console.log(`Session bereits in charges ohne lch (date=${date} kwh=${kwh}) – übersprungen.`);
-    return;
-  }
 
   // 5. Kosten berechnen mit Settings aus Firestore inkl. SNAP-Erkennung
   // SNAP wird über den Mittelpunkt der aktiven Ladezeit geprüft (dauerMs aus cdi)
@@ -303,7 +285,14 @@ async function run() {
   console.log(`maxKw=${maxKw ?? '—'} (aus ${peak?.samples ?? 0} Messpunkten)`);
 
   const entry = {
-    id:           Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+    // Cumulative Wh survives reboot; equal amounts in two real sessions have
+    // different meter endpoints. Never use kWh alone as a session identity.
+    id:           Number.isFinite(status.eto) && status.eto > 0
+      ? `goe-${serial}-${status.eto}`
+      : Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+    sessionKey:   Number.isFinite(status.eto) && status.eto > 0 ? `goe:${serial}:${status.eto}` : null,
+    sessionDate:  date,
+    sessionTime:  time,
     date,
     time,
     snap,
@@ -319,11 +308,25 @@ async function run() {
     created:      new Date().toISOString(),
   };
 
-  // 6. In Firestore speichern
-  const updated = [entry, ...existing].sort((a, b) => b.date.localeCompare(a.date));
-  await docRef.set({ charges: updated }, { merge: true });
+  // Re-read inside the transaction: browser edits/deletions and overlapping
+  // imports must never be overwritten by the earlier settings read.
+  const imported = await db.runTransaction(async tx => {
+    const doc = await tx.get(docRef);
+    const deleted = await tx.get(deletedRef);
+    const current = doc.exists ? doc.data() : {};
+    const markers = deleted.exists ? deleted.data().entries || [] : [];
+    const next = ChargeSync.importSession(current, markers, entry);
+    tx.set(docRef, { charges: next.charges }, { merge: true });
+    tx.set(deletedRef, { entries: next.deleted });
+    // Only consume after a successful import/known-session check, not before
+    // a failed household write. Workflow concurrency protects this tracker.
+    tx.delete(peakRef);
+    return next.imported;
+  });
+  console.log(imported
+    ? `✅ Gespeichert: ${date} ${time} | ${kwh} kWh | ${total} € | SNAP=${snap}`
+    : `Session bereits vorhanden oder bewusst gelöscht – übersprungen (${date} ${time}).`);
 
-  console.log(`✅ Gespeichert: ${date} ${time} | ${kwh} kWh | ${total} € | bruttoPerKwh=${bruttoPerKwh} | SNAP=${snap}`);
 }
 
 run().catch(err => {
