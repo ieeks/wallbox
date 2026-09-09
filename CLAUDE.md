@@ -18,7 +18,7 @@ sehen Nutzer nach einem Deploy noch die alte Version.
 
 ---
 
-## Aktuelle Version: 1.16.1
+## Aktuelle Version: 1.16.3
 
 ---
 
@@ -42,18 +42,35 @@ erst dann rot. Kein Datenverlust dabei: die Session steht bis zur nächsten in `
 und der Zeitstempel aus `now - (rbt - lccfc)` stimmt auch Stunden später noch. Was fehlt,
 ist der Peak – `nrg[11]` wird nur bei `car === 2` abgetastet.
 
-**Erkennungslogik:**
-- `car === 1` (idle/abgesteckt) + `wh > 10` + `lch` neu → neue Session
-- Session-Zeitpunkt: `now - (rbt - lccfc)` → exakter Endzeitpunkt für SNAP
-- Duplikat-Check 1: `lch` in bestehendem `charges[]` suchen (nicht lastProcessedSession)
-- Duplikat-Check 2 (`date`+`kwh`): greift **nur gegen Einträge ohne `lch`** (CSV/manuell).
-  Sonst würde eine echte zweite Session am selben Tag mit ähnlicher kWh-Menge nie importiert.
-  Zeitvergleich geht nicht: CSV speichert den Steckbeginn, der Auto-Import den Ladeschluss.
-- Gelöschte Einträge können re-importiert werden (lch fehlt → wird neu gespeichert)
+**Erkennungslogik (ab v1.16.2):**
+- `car === 1` + mindestens 10 Wh + gültiger Session-Endzeitpunkt.
+- `sessionKey = goe:<serial>:<eto>` verwendet den Gesamtzählerstand in Wh,
+  damit wiederholte Polls und Reboots dieselbe Session nicht erneut anlegen.
+- Altdaten ohne diesen Schlüssel werden konservativ über `lch` UND die Nähe
+  des ursprünglichen Datums/der Uhrzeit (5 Minuten) erkannt. `lch` allein ist
+  boot-relativ und nicht eindeutig. Gleiche kWh sind kein Duplikatbeweis.
+- Manuelle Änderungen/IDs bleiben bei der Ergänzung der Session-Kennung erhalten.
+- Ungültige/fehlende Endzeit wird nicht mehr durch „jetzt“ ersetzt: Warnung statt
+  erfundener neuer Session. Ohne API-Historie ist dieser Fall nicht rekonstruierbar.
+- Import und Browser schreiben in Firestore-Transaktionen mit aktuellem Bestand.
+- Löschmarker liegen in `haushalte/charge-deletions`, Feld `entries`. Diese werden
+  auch vom Import geprüft und bei Legacy-Treffern um die Zählerkennung ergänzt.
+- Workflow-Concurrency verhindert parallele Peak-Tracker-Läufe.
 
-**Dedup in der App (`deduplicateCharges`):** Key ist `date` + `time` + `kwh` (0,1er-Raster),
-parallel dazu `lch`. Die Uhrzeit gehört zwingend in den Key – ohne sie löscht `loadFromCloud()`
-bei jedem Start eine zweite echte Ladung desselben Tages und schreibt das in die Cloud zurück.
+**Browser-Sync (ab v1.16.2):** `src/charge-sync.js` wird vor `script.js` geladen
+und auch vom Node-Importer genutzt. Kein Framework/Build erforderlich.
+- `lf_charge_outbox` hält nur Änderungen (Eintragsfelder, Settings-Felder, Löschungen).
+  Erfolgreich bestätigte Operationen werden entfernt; während des Schreibens
+  hinzugekommene Änderungen bleiben erhalten. Offline-Retry bei Online/Tab-Rückkehr.
+- Einmalige Übernahme alter lokaler Daten als `seed`: ergänzt nur fehlende IDs,
+  überschreibt keine Cloud-Daten und respektiert Löschmarker.
+- Löschmarker nach ID entfernen nicht automatisch ein anderes, noch vorhandenes
+  Exemplar derselben Session. So kann man ein Duplikat löschen und das Original behalten.
+- Explizite Duplikatbereinigung benutzt IDs/Session-Kennungen, keine kWh-Rundung.
+  Kein automatisches Löschen vermeintlicher Duplikate beim App-Start.
+- Nach Rollout alle Geräte neu laden. Schon vorher gelöschte Einträge haben keine
+  Marker. Noch laufende alte Clients können weiterhin veraltete Listen schreiben;
+  das separate Löschdokument bleibt erhalten und neue Clients wenden es wieder an.
 
 **Kosten:**
 - `energyPrice`, `gebrauchsabgabe`, `ust` aus Firestore `settings` (App-Einstellungen)
@@ -70,14 +87,14 @@ bei jedem Start eine zweite echte Ladung desselben Tages und schreibt das in die
 **Peak-Tracker (`maxKw`):** `nrg[11]` ist die *momentane* Leistung. Der Import läuft aber
 erst bei `car === 1` (abgesteckt) – dort fliesst nichts mehr und der Wert ist immer 0.
 Deshalb wird bei `car === 2` (lädt) jeder Lauf `nrg[11]` mitgeschrieben und das Maximum
-gehalten; beim Import wird es via `consumePeak()` übernommen und der Tracker geleert.
+gehalten; beim Import wird es gelesen und erst mit der erfolgreichen Transaktion gelöscht.
 
 - State liegt in **eigenem Dokument** `haushalte/goe-peak-tracker`. Nicht als Feld in
-  `haushalte/haushalt`: `syncToCloud()` schreibt mit `.set()` **ohne** `{merge:true}` und
-  würde jedes der App unbekannte Feld beim nächsten Nutzer-Sync löschen.
+  `haushalte/haushalt`: alte Browser-Versionen überschreiben das Haushaltsdokument vollständig;
+  die neue Version schreibt transaktional mit `{merge:true}`.
 - Session-Reset erkannt über `wh` (fällt = neue Session) und `rbt` (fällt = Reboot).
-- `consumePeak()` läuft **vor** allen Abbruchpfaden (`wh < 10`, Duplikat-Checks), damit ein
-  Peak nicht in die nächste Session überläuft.
+- `consumePeak()` liest vor dem Import. Schreibfehler lassen den Peak für den Retry erhalten;
+  eine Idle-Session unter 10 Wh leert ihn ausdrücklich.
 - Ohne Tracking-Daten bleibt `maxKw` **`null`** – kein Fallback auf `nrg[11]`, denn 0 ist
   kein Maximum. Die 15 Einträge vor v1.10.3 haben deshalb `maxKw: 0` (nicht rückwirkend
   reparierbar, die API liefert keine Historie).
@@ -435,8 +452,8 @@ weist `charges` neu zu). `script.js` selbst bleibt unangetastet.
 
 **Persistenz (`store.js`).** Sub-Collection `haushalte/haushalt/trips`, ein
 Dokument je Trip, plus localStorage-Spiegel (`lf_trips`). Ausdrücklich **kein**
-Feld am Haushalt-Dokument: `syncToCloud()` schreibt dort mit `.set()` ohne
-`{merge:true}` und würde es beim nächsten Nutzer-Sync löschen. Sub-Collections
+Feld am Haushalt-Dokument: ältere App-Versionen ersetzen das Haushaltsdokument vollständig. Der neue
+Sync verwendet `{merge:true}`, Trips behalten ihre eigene Persistenz. Sub-Collections
 sind davon nicht betroffen – der Preis ist, dass Laden und Schreiben hier
 eigenständig passieren, nicht über `persist()`. Geladen wird erst beim Öffnen
 der Trip-Ansicht. Vor dem Schreiben geht alles durch `JSON.parse(JSON.stringify())`:
@@ -532,3 +549,29 @@ umgebaut.
 (`~976 km (geschätzt, 927–1 024)`), nicht als scheinbar exakte Zahl.
 
 **Noch offen:** Claude-Fallback (§7, laut Spec optional).
+
+
+## Review-Nacharbeit v1.16.3
+
+- Sync-Fehler sind als dauerhafter Hinweis sichtbar. Fehlende Browser-Rechte auf
+  `charge-deletions` brechen die ganze Transaktion ab; kein Schreiben ohne Löschschutz.
+  `FIREBASE-SETUP.md` dokumentiert Pfade und Prüfungen, nicht unbekannte Live-Regeln.
+- Lokale Speicherfehler stoppen den Sync, nicht die App. Beschädigte Outbox wird
+  nicht durch eine leere Liste ersetzt; vorgemerkte Änderungen müssen erhalten bleiben.
+  Operation-IDs benötigen kein `crypto.randomUUID()`/Secure Context.
+- ID-lose Ladungen blockieren die Zusammenführung vor jedem Schreiben. Keine
+  erfundenen IDs aus kWh und Datum, kein stilles Verwerfen.
+- Bekannte Idle-Sessions verursachen keine erneuten Dokument-Writes. Legacy-
+  Anreicherungen und tatsächlich vorhandene Peak-Tracker werden weiterhin gespeichert
+  bzw. geleert. Fehlendes lch und ungültiges/nullendes Ladeende leeren den alten Peak.
+- Ungültiges Ladeende wird in jedem Lauf normal protokolliert, nicht als wiederholte
+  Warnannotation. Es gibt dafür bewusst kein zusätzliches Zustandsdokument.
+- `eto` wird geloggt; bei fehlendem/ungültigem Wert erscheint eine Warnannotation
+  zum Legacy-Fallback. Nummern und reine Ziffernstrings werden unterstützt.
+- Der Reset betrifft Ladungen und Einstellungen, ausdrücklich keine Trips. Das
+  steht auch im Button und in der Bestätigung. Unklare Duplikate bleiben zur Einzelprüfung.
+- Löschmarker wachsen absichtlich monoton. Kein automatisches Ablaufdatum, da sonst
+  alte Geräte gelöschte Ladungen wieder hochladen könnten. Für die kleine Haushalts-App
+  derzeit keine Archivierung/Pruning-Infrastruktur; Dokumentgröße bei großem Import prüfen.
+- Rollback lässt Löschmarker bestehen, alte Clients/Importer beachten sie aber nicht
+  und können neue IDs erzeugen. Deshalb sind Backup und Neuladen aller Geräte nötig.
