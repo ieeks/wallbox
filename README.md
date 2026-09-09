@@ -120,3 +120,14 @@ Alte Sessions ohne Zählerkennung bleiben beim Reboot nur eingeschränkt zuorden
 `npm test`: inklusive Regressionstests für zwei Gerätestände, Offline/Reload,
 Änderungen während des Syncs, parallelen Import, Reboot und Löschschutz.
 Die Tests verwenden lokale Firestore-/go-e-Doubles, keine produktiven Zugangsdaten.
+
+
+### Hinweise zu v1.16.3
+
+Sync-Probleme erscheinen dauerhaft sichtbar. Beschädigte Daten oder Ladungen ohne
+ID werden nicht still verworfen, sondern stoppen das Cloud-Schreiben bis zur Prüfung.
+Bei lokalem Speicherfehler warnt die App, dass Änderungen nicht sicher gespeichert sind.
+Bekannte Auto-Import-Sessions werden im Leerlauf nicht erneut geschrieben.
+„Ladungen & Einstellungen zurücksetzen“ lässt Reise-Reports bestehen.
+Vor dem Merge die Checkliste in [FIREBASE-SETUP.md](FIREBASE-SETUP.md) abarbeiten;
+die produktiven Regeln und der reale Zwei-Geräte-Ablauf wurden nicht aus Tests abgeleitet.

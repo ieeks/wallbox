@@ -3,6 +3,11 @@ import './charge-sync.js';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 const S = globalThis.ChargeSync;
+function cut(source, from, to) {
+  const start = source.indexOf(from), end = source.indexOf(to, start + from.length);
+  if (start < 0 || end < 0 || end <= start) throw Error('Test-Quelltextmarke fehlt: ' + from);
+  return source.slice(start, end);
+}
 const a = { id: 'a', date: '2026-08-29', time: '06:00', kwh: 78.3, lch: 123, total: 17.95 };
 const newer = { ...a, id: 'new', date: '2026-09-09', lch: 456 };
 const state = (charges = [a]) => ({ charges, settings: { theme: 'light', defaultEnergy: 0.14 } });
@@ -62,7 +67,13 @@ function browser(initial = state(), storage = new Map()) {
   const events = [];
   let hook = null, fail = false;
   const db = {
-    collection: () => ({ doc: id => ({ id: id === 'haushalt' ? 'household' : 'deleted' }) }),
+    collection: () => ({ doc: id => {
+      const key = id === 'haushalt' ? 'household' : 'deleted';
+      return { id: key, set: async (value, options) => {
+        expect(options).toEqual({ mergeFields: ['settings'] });
+        dbData[key].settings = S.copy(value.settings);
+      } };
+    } }),
     runTransaction: async callback => {
       if (fail) throw Error('offline');
       const attempt = async () => {
@@ -79,16 +90,18 @@ function browser(initial = state(), storage = new Map()) {
       return result.value;
     },
   };
-  let n = 0;
   const context = vm.createContext({ ChargeSync: S, db, firebaseReady: true,
     HOUSEHOLD_DOC: 'haushalt', charges: S.copy(initial.charges), settings: S.copy(initial.settings),
     firebase: { firestore: { FieldValue: { serverTimestamp: () => 1 } } },
-    localStorage: { getItem: k => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v) },
-    crypto: { randomUUID: () => `op-${++n}` }, console: { error() {} },
-    setSyncStatus: status => events.push(status), refreshDashboard() {},
+    localStorage: { getItem: k => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v), removeItem: k => storage.delete(k) },
+    startupStorageError: null, console: { error() {} },
+    document: { getElementById: () => ({ hidden: true, textContent: '' }) },
+    setSyncStatus: status => events.push(status), refreshDashboard() {}, showToast() {},
+    location: { reload: () => events.push('reload') },
   });
-  vm.runInContext(source.slice(source.indexOf('const SYNC_OUTBOX'), source.indexOf('// =====================================================================\n// AUFKLAPPBARE')), context);
-  vm.runInContext(source.slice(source.indexOf('async function syncToCloud()'), source.indexOf('\nfunction deduplicateCharges')), context);
+  vm.runInContext(cut(source, 'const SYNC_OUTBOX', '// =====================================================================\n// AUFKLAPPBARE'), context);
+  vm.runInContext(cut(source, 'async function syncToCloud()', '\nfunction deduplicateCharges'), context);
+  vm.runInContext(cut(source, 'async function clearAllData()', '// Einträge mit `dauer`'), context);
   return { context, dbData, storage, events, sync: () => context.syncToCloud(),
     hook: fn => { hook = fn; }, offline: value => { fail = value; } };
 }
@@ -141,7 +154,7 @@ describe('browser transaction integration', () => {
     b.offline(true);
     b.context.settings.theme = 'dark';
     await b.sync();
-    expect(b.events.at(-1)).toBe('offline');
+    expect(b.events.at(-1)).toBe('error');
     expect(JSON.parse(b.storage.get('lf_charge_outbox')).length).toBeGreaterThan(0);
   });
 });
@@ -159,6 +172,7 @@ function importer() {
   const data = { haushalt: state([]), 'charge-deletions': { entries: [] }, 'goe-peak-tracker': { maxW: 11000, samples: 5 } };
   const status = { car: 1, wh: 78300, eto: 200000, lch: 1000, rbt: 10000, lccfc: 9000, cdi: { value: 3600000 } };
   let beforeTransaction = null, fail = false;
+  const counts = { writes: 0, deletes: 0 };
   const snapshot = id => ({ exists: !!data[id], data: () => S.copy(data[id]) });
   const db = {
     collection: () => ({ doc: id => ({ id, get: async () => snapshot(id), delete: async () => { delete data[id]; } }) }),
@@ -167,8 +181,8 @@ function importer() {
       if (fail) throw Error('write failed');
       const writes = [];
       const result = await callback({ get: async ref => snapshot(ref.id),
-        set: (ref, value) => writes.push(() => { data[ref.id] = { ...data[ref.id], ...value }; }),
-        delete: ref => writes.push(() => { delete data[ref.id]; }),
+        set: (ref, value) => writes.push(() => { counts.writes++; data[ref.id] = { ...data[ref.id], ...value }; }),
+        delete: ref => writes.push(() => { counts.deletes++; delete data[ref.id]; }),
       });
       writes.forEach(write => write());
       return result;
@@ -180,7 +194,7 @@ function importer() {
     console: { log() {} }, setTimeout, Intl, Date,
   });
   vm.runInContext(source, context);
-  return { data, status, run: () => context.run(), before: fn => { beforeTransaction = fn; }, offline: () => { fail = true; } };
+  return { data, status, counts, run: () => context.run(), before: fn => { beforeTransaction = fn; }, offline: () => { fail = true; } };
 }
 
 describe('actual importer with fake APIs', () => {
@@ -219,4 +233,102 @@ describe('actual importer with fake APIs', () => {
     await i.run();
     expect(i.data.haushalt.charges).toEqual([]);
   });
+});
+
+describe('review regressions', () => {
+  it('rejects ID-less data before it can collapse into a Map or be written', async () => {
+    const bad = [{ date: '2026-01-02', kwh: 1 }, { date: '2026-01-01', kwh: 2 }];
+    expect(() => S.apply(state(bad), [], [])).toThrow('ID');
+    const b = browser();
+    b.dbData.household.charges = S.copy(bad);
+    expect(await b.sync()).toBe(false);
+    expect(b.dbData.household.charges).toEqual(bad);
+    expect(b.events.at(-1)).toBe('error');
+  });
+  it('keeps ID-less entries when explicitly looking for duplicates', () => {
+    const context = vm.createContext({ ChargeSync: S });
+    const source = readFileSync(new URL('../script.js', import.meta.url), 'utf8');
+    vm.runInContext(cut(source, 'function deduplicateCharges', 'async function loadFromCloud'), context);
+    expect(context.deduplicateCharges([{ date: a.date }, { date: a.date }])).toHaveLength(2);
+  });
+  it('starts without crypto.randomUUID and generates distinct operations', async () => {
+    const b = browser(); // no crypto in this context
+    expect(b.context.crypto).toBeUndefined();
+    b.context.settings.theme = 'dark';
+    b.context.captureSyncChanges();
+    const ops = JSON.parse(b.storage.get('lf_charge_outbox'));
+    expect(new Set(ops.map(op => op.opId)).size).toBe(ops.length);
+    expect(await b.sync()).toBe(true);
+  });
+  it('does not crash startup or discard data when localStorage rejects writes', async () => {
+    class FullStorage extends Map { set() { throw new Error('QuotaExceededError'); } }
+    const b = browser(state(), new FullStorage());
+    expect(await b.sync()).toBe(false);
+    expect(b.context.charges).toEqual([a]);
+    expect(b.dbData.household.charges).toEqual([a]);
+    expect(b.events.at(-1)).toBe('error');
+  });
+  it('preserves malformed pending data and visibly stops sync instead of resetting to []', async () => {
+    for (const raw of ['{broken', '{"not":"an array"}']) {
+      const storage = new Map([['lf_charge_outbox', raw]]);
+      const b = browser(state(), storage);
+      expect(await b.sync()).toBe(false);
+      expect(storage.get('lf_charge_outbox')).toBe(raw);
+      expect(b.context.charges).toEqual([a]);
+    }
+  });
+  it('resets settings and charges while preserving deletion markers and trips', async () => {
+    const b = browser();
+    b.storage.set('lf_trips', '[{"id":"holiday"}]');
+    await b.sync();
+    await b.context.clearAllData();
+    expect(b.dbData.household.settings).toEqual({});
+    expect(b.dbData.household.charges).toEqual([]);
+    expect(b.dbData.deleted.entries[0].id).toBe('a');
+    expect(b.storage.has('lf_settings')).toBe(false);
+    expect(b.storage.get('lf_trips')).toBe('[{"id":"holiday"}]');
+    expect(b.events.at(-1)).toBe('reload');
+  });
+  it('normalizes undefined field updates to Firestore-compatible null', () => {
+    const ops = S.changes(state([{ ...a, dauer: '1:00:00' }]), state([{ ...a, dauer: undefined }]));
+    expect(S.apply(state([{ ...a, dauer: '1:00:00' }]), [], ops).charges[0].dauer).toBe(null);
+  });
+  it('does not produce operations from reordered object keys', () => {
+    expect(S.changes(state(), state([{ total: a.total, kwh: a.kwh, time: a.time, date: a.date, lch: a.lch, id: a.id }]))).toEqual([]);
+  });
+  it('fails loudly when a source extraction marker is renamed', () => {
+    expect(() => cut('a b c', 'missing', 'c')).toThrow('Quelltextmarke');
+  });
+  it('does not write again on subsequent polls of an already enriched idle session', async () => {
+    const i = importer();
+    await i.run();
+    const previous = { ...i.counts };
+    await i.run();
+    await i.run();
+    expect(i.counts).toEqual(previous);
+  });
+  it.each([{ lch: null }, { lccfc: 0 }, { lccfc: 11000 }])('clears stale peak on terminal invalid session: %j', async overrides => {
+    const i = importer(); Object.assign(i.status, overrides);
+    await i.run();
+    expect(i.data['goe-peak-tracker']).toBeUndefined();
+    expect(i.data.haushalt.charges).toEqual([]);
+  });
+  it('uses a numeric-string meter endpoint without losing stable identity', async () => {
+    const i = importer(); i.status.eto = '200000';
+    await i.run();
+    expect(i.data.haushalt.charges[0].sessionKey).toBe('goe:123456:200000');
+  });
+});
+
+
+it('shows missing Firestore permissions as a blocked sync and keeps the outbox', async () => {
+  const b = browser();
+  const notice = {};
+  b.context.document.getElementById = () => notice;
+  b.context.db.runTransaction = async () => { throw Object.assign(new Error('denied'), { code: 'permission-denied' }); };
+  expect(await b.sync()).toBe(false);
+  expect(notice.hidden).toBe(false);
+  expect(notice.textContent).toContain('Zugriffsrechte');
+  expect(JSON.parse(b.storage.get('lf_charge_outbox')).length).toBeGreaterThan(0);
+  expect(b.dbData.household.charges).toEqual([a]);
 });

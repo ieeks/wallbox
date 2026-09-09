@@ -18,7 +18,7 @@ sehen Nutzer nach einem Deploy noch die alte Version.
 
 ---
 
-## Aktuelle Version: 1.16.2
+## Aktuelle Version: 1.16.3
 
 ---
 
@@ -549,3 +549,29 @@ umgebaut.
 (`~976 km (geschätzt, 927–1 024)`), nicht als scheinbar exakte Zahl.
 
 **Noch offen:** Claude-Fallback (§7, laut Spec optional).
+
+
+## Review-Nacharbeit v1.16.3
+
+- Sync-Fehler sind als dauerhafter Hinweis sichtbar. Fehlende Browser-Rechte auf
+  `charge-deletions` brechen die ganze Transaktion ab; kein Schreiben ohne Löschschutz.
+  `FIREBASE-SETUP.md` dokumentiert Pfade und Prüfungen, nicht unbekannte Live-Regeln.
+- Lokale Speicherfehler stoppen den Sync, nicht die App. Beschädigte Outbox wird
+  nicht durch eine leere Liste ersetzt; vorgemerkte Änderungen müssen erhalten bleiben.
+  Operation-IDs benötigen kein `crypto.randomUUID()`/Secure Context.
+- ID-lose Ladungen blockieren die Zusammenführung vor jedem Schreiben. Keine
+  erfundenen IDs aus kWh und Datum, kein stilles Verwerfen.
+- Bekannte Idle-Sessions verursachen keine erneuten Dokument-Writes. Legacy-
+  Anreicherungen und tatsächlich vorhandene Peak-Tracker werden weiterhin gespeichert
+  bzw. geleert. Fehlendes lch und ungültiges/nullendes Ladeende leeren den alten Peak.
+- Ungültiges Ladeende wird in jedem Lauf normal protokolliert, nicht als wiederholte
+  Warnannotation. Es gibt dafür bewusst kein zusätzliches Zustandsdokument.
+- `eto` wird geloggt; bei fehlendem/ungültigem Wert erscheint eine Warnannotation
+  zum Legacy-Fallback. Nummern und reine Ziffernstrings werden unterstützt.
+- Der Reset betrifft Ladungen und Einstellungen, ausdrücklich keine Trips. Das
+  steht auch im Button und in der Bestätigung. Unklare Duplikate bleiben zur Einzelprüfung.
+- Löschmarker wachsen absichtlich monoton. Kein automatisches Ablaufdatum, da sonst
+  alte Geräte gelöschte Ladungen wieder hochladen könnten. Für die kleine Haushalts-App
+  derzeit keine Archivierung/Pruning-Infrastruktur; Dokumentgröße bei großem Import prüfen.
+- Rollback lässt Löschmarker bestehen, alte Clients/Importer beachten sie aber nicht
+  und können neue IDs erzeugen. Deshalb sind Backup und Neuladen aller Geräte nötig.

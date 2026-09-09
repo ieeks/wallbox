@@ -104,8 +104,13 @@ function dauerToMs(dauer) {
 // =====================================================================
 // STATE
 // =====================================================================
-let charges = JSON.parse(localStorage.getItem('lf_charges') || '[]');
-let settings = JSON.parse(localStorage.getItem('lf_settings') || 'null') || {
+let startupStorageError = null;
+function readStoredState(key, fallback) {
+  try { return JSON.parse(localStorage.getItem(key) || 'null') ?? fallback; }
+  catch (e) { startupStorageError = e; return fallback; }
+}
+let charges = readStoredState('lf_charges', []);
+let settings = readStoredState('lf_settings', null) || {
   defaultEnergy: 0.140118,
   tariffHistory: [],
   gebrauchsabgabe: WIEN_TARIFFS.gebrauchsabgabe_pct,
@@ -148,6 +153,7 @@ const SYNC_INITIALIZED = 'lf_charge_sync_v2';
 const syncCopy = ChargeSync.copy;
 let syncBaseline = syncCopy({ charges, settings });
 let syncPromise = null;
+let syncOperationCounter = 0;
 
 function readSyncList(key) {
   const value = JSON.parse(localStorage.getItem(key) || '[]');
@@ -157,24 +163,46 @@ function readSyncList(key) {
 
 function appendSyncOperations(ops) {
   const queue = readSyncList(SYNC_OUTBOX);
-  for (const op of ops) queue.push({ ...op, opId: crypto.randomUUID() });
+  for (const op of ops) queue.push({ ...op, opId: `op-${Date.now()}-${Math.random().toString(36).slice(2)}-${syncOperationCounter++}` });
   localStorage.setItem(SYNC_OUTBOX, JSON.stringify(queue));
 }
 
 function captureSyncChanges() {
-  // Save pending mutations BEFORE the local snapshot: survive offline/reload.
+  // Operationen VOR dem lokalen Datenstand sichern: Offline/Reload darf sie nicht verlieren.
   appendSyncOperations(ChargeSync.changes(syncBaseline, { charges, settings }));
-  syncBaseline = syncCopy({ charges, settings });
   localStorage.setItem('lf_charges', JSON.stringify(charges));
   localStorage.setItem('lf_settings', JSON.stringify(settings));
+  syncBaseline = syncCopy({ charges, settings });
 }
 
-// One-time legacy adoption: missing local entries may be uploaded, but must never
-// overwrite a newer cloud entry with the same ID. Tombstones still take priority.
-if (!localStorage.getItem(SYNC_INITIALIZED)) {
-  appendSyncOperations(charges.map(entry => ({ type: 'seed', entry })));
-  localStorage.setItem(SYNC_INITIALIZED, '1');
+// Legacy-Daten einmal übernehmen: nur fehlende IDs ergänzen, Cloud-Werte nie ersetzen.
+function seedLocalCharges() {
+  if (startupStorageError) throw startupStorageError;
+  if (!localStorage.getItem(SYNC_INITIALIZED)) {
+    ChargeSync.assertIds(syncBaseline.charges);
+    appendSyncOperations(syncBaseline.charges.map(entry => ({ type: 'seed', entry })));
+    localStorage.setItem(SYNC_INITIALIZED, '1');
+  }
 }
+
+function reportSyncError(error, localStorageFailed = false) {
+  console.error('Synchronisierung gestoppt:', error);
+  setSyncStatus('error');
+  const notice = document.getElementById('sync-error');
+  notice.hidden = false;
+  notice.textContent = localStorageFailed
+    ? 'Lokales Speichern fehlgeschlagen oder Sync-Daten beschädigt. Änderungen sind nicht sicher gespeichert. Seite geöffnet lassen und Speicherzugriff prüfen; vorhandene lokale Daten nicht löschen.'
+    : error.code === 'permission-denied'
+      ? 'Cloud-Sync blockiert: Zugriffsrechte fehlen. Änderungen bleiben lokal vorgemerkt. Firebase-Regeln für Haushalt und Löschschutz prüfen.'
+      : error.code === 'invalid-charge-state'
+        ? 'Cloud-Sync gestoppt: Eine Ladung hat keine gültige ID. Es wurden keine Daten verworfen. Datenbestand vor dem nächsten Sync prüfen.'
+        : 'Cloud-Sync fehlgeschlagen. Änderungen bleiben lokal vorgemerkt und werden bei der nächsten Verbindung erneut versucht.';
+}
+
+// Ein Speicherfehler darf den restlichen App-Start nicht verhindern. Beschädigte
+// Outbox nicht durch [] ersetzen: dabei könnten vorgemerkte Löschungen verlorengehen.
+try { seedLocalCharges(); }
+catch (e) { reportSyncError(e, true); }
 
 
 // =====================================================================
@@ -336,19 +364,23 @@ function setThemeFromToggle(isLight) {
 }
 
 async function syncToCloud() {
-  captureSyncChanges();
+  try { seedLocalCharges(); captureSyncChanges(); }
+  catch (e) { reportSyncError(e, true); return false; }
   if (!firebaseReady) { setSyncStatus('offline'); return false; }
   if (syncPromise) return syncPromise;
   setSyncStatus('syncing');
   syncPromise = (async () => {
+    let localStorageFailed = false;
     try {
       do {
+        localStorageFailed = true;
         const batch = readSyncList(SYNC_OUTBOX);
         const ref = db.collection('haushalte').doc(HOUSEHOLD_DOC);
-        // Separate document: old clients' .set() cannot erase deletion markers.
+        // Eigenes Dokument: Alte Clients können die Löschmarker nicht per .set() entfernen.
         const deletedRef = db.collection('haushalte').doc('charge-deletions');
         const localDeleted = readSyncList(SYNC_DELETED);
         const defaults = syncCopy(settings);
+        localStorageFailed = false;
         const result = await db.runTransaction(async tx => {
           const doc = await tx.get(ref);
           const tombstones = await tx.get(deletedRef);
@@ -360,8 +392,9 @@ async function syncToCloud() {
           tx.set(deletedRef, { entries: next.deleted });
           return next;
         });
-        // A user may have edited/deleted again while the transaction was pending.
-        // Acknowledge ONLY this batch; reapply newer operations before rendering.
+        // Während des Schreibens sind weitere Änderungen möglich. Nur diesen Batch
+        // bestätigen und neuere Operationen vor der Anzeige wieder anwenden.
+        localStorageFailed = true;
         captureSyncChanges();
         const acknowledged = new Set(batch.map(op => op.opId));
         const pending = readSyncList(SYNC_OUTBOX).filter(op => !acknowledged.has(op.opId));
@@ -373,13 +406,14 @@ async function syncToCloud() {
         syncBaseline = syncCopy({ charges, settings });
         localStorage.setItem('lf_charges', JSON.stringify(charges));
         localStorage.setItem('lf_settings', JSON.stringify(settings));
+        localStorageFailed = false;
       } while (readSyncList(SYNC_OUTBOX).length);
       setSyncStatus('online');
+      document.getElementById('sync-error').hidden = true;
       refreshDashboard();
       return true;
     } catch (e) {
-      console.error('Sync error (Änderungen bleiben lokal vorgemerkt):', e);
-      setSyncStatus('offline');
+      reportSyncError(e, localStorageFailed);
       return false;
     } finally { syncPromise = null; }
   })();
@@ -389,7 +423,7 @@ async function syncToCloud() {
 function deduplicateCharges(arr) {
   const kept = [];
   for (const c of arr) {
-    if (!kept.some(k => k.id === c.id || ChargeSync.sameSession(k, c))) kept.push(c);
+    if (!c.id || !kept.some(k => (k.id && k.id === c.id) || ChargeSync.sameSession(k, c))) kept.push(c);
   }
   return kept;
 }
@@ -404,6 +438,7 @@ function setSyncStatus(status) {
   badge.className = 'sync-badge ' + status;
   if(status === 'online') label.textContent = 'Cloud';
   else if(status === 'syncing') label.textContent = 'Sync...';
+  else if(status === 'error') label.textContent = 'Sync-Fehler';
   else label.textContent = 'Lokal';
 }
 
@@ -413,13 +448,12 @@ async function cleanupDuplicates() {
   charges.sort((a,b) => b.date.localeCompare(a.date));
   const removed = before - charges.length;
   if(removed > 0) {
-    localStorage.setItem('lf_charges', JSON.stringify(charges));
     await syncToCloud();
     toggleSettings();
     refreshDashboard();
     showToast(`${removed} Duplikat${removed !== 1 ? 'e' : ''} entfernt`);
   } else {
-    showToast('Keine Duplikate gefunden');
+    showToast('Keine sicher erkannten Duplikate gefunden – unklare Einträge bitte einzeln prüfen');
   }
 }
 
@@ -432,8 +466,8 @@ async function clearChargesOnly() {
 }
 
 async function clearAllData() {
-  // Keep deletion history and the offline outbox, otherwise another device can
-  // resurrect everything. Reset only this app's settings, never localStorage.clear().
+  // Löschhistorie und Outbox behalten, sonst können andere Geräte Einträge zurückholen.
+  // Trips bleiben ausdrücklich erhalten (lokal und als Untercollection).
   charges = [];
   const synced = await syncToCloud();
   if (!synced) {
@@ -441,10 +475,13 @@ async function clearAllData() {
     refreshDashboard();
     return;
   }
-  await db.collection('haushalte').doc(HOUSEHOLD_DOC).set({ settings: {} }, { merge: true });
-  localStorage.removeItem('lf_settings');
-  localStorage.removeItem('lf_collapsed');
-  location.reload();
+  try {
+    // Das Map-Feld ausdrücklich komplett ersetzen, Ladungen/Löschmarker beibehalten.
+    await db.collection('haushalte').doc(HOUSEHOLD_DOC).set({ settings: {} }, { mergeFields: ['settings'] });
+    localStorage.removeItem('lf_settings');
+    localStorage.removeItem('lf_collapsed');
+    location.reload();
+  } catch (e) { reportSyncError(e); showToast('Einstellungen konnten nicht vollständig zurückgesetzt werden'); }
 }
 
 // Einträge mit `dauer` neu prüfen: alte Einträge hatten SNAP nur an einem Zeitpunkt
@@ -468,7 +505,6 @@ async function migrateSnapTiming() {
   }
   if(changed > 0) {
     console.log(`SNAP-Migration: ${changed} Eintrag/Einträge korrigiert`);
-    localStorage.setItem('lf_charges', JSON.stringify(charges));
     await syncToCloud();
   }
 }
@@ -490,7 +526,6 @@ async function migrateTariffPrices() {
   }
   if(changed > 0) {
     console.log(`Tarif-Migration: ${changed} Eintrag/Einträge angepasst`);
-    localStorage.setItem('lf_charges', JSON.stringify(charges));
     await syncToCloud();
   }
 }

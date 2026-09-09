@@ -202,7 +202,11 @@ async function run() {
   const rbt   = status.rbt   ?? null; // ms seit Boot (aktuell)
   const lccfc = status.lccfc ?? null; // ms seit Boot: lastCarStateChangedFromCharging
   const powerW = typeof status.nrg?.[11] === 'number' ? status.nrg[11] : null; // momentane Gesamtleistung
-  console.log(`car=${car} | wh=${wh} | lch=${lch} | rbt=${rbt} | lccfc=${lccfc} | P=${powerW}W`);
+  const rawEto = status.eto;
+  const totalWh = typeof rawEto === 'number' ? rawEto
+    : typeof rawEto === 'string' && /^\d+$/.test(rawEto) ? Number(rawEto) : NaN;
+  const meterKey = Number.isSafeInteger(totalWh) && totalWh > 0 ? `goe:${serial}:${totalWh}` : null;
+  console.log(`car=${car} | wh=${wh} | eto=${JSON.stringify(rawEto)} | lch=${lch} | rbt=${rbt} | lccfc=${lccfc} | P=${powerW}W`);
 
   // 2b. Peak-Tracking während der Ladung (car==2).
   // nrg[11] ist die MOMENTANE Leistung, kein Session-Maximum. Beim Import selbst
@@ -229,6 +233,7 @@ async function run() {
   }
 
   if (!lch) {
+    if (peak) await peakRef.delete();
     console.log('Kein lch-Wert vorhanden – ignoriert.');
     return;
   }
@@ -248,8 +253,10 @@ async function run() {
   // Datum/Uhrzeit: exakter Session-Endzeitpunkt via rbt + lccfc
   // lccfc = ms seit Boot als die Ladung endete → now - (rbt - lccfc) = echter Endzeitpunkt
   const now = new Date();
-  if (!Number.isFinite(rbt) || !Number.isFinite(lccfc) || lccfc < 0 || lccfc > rbt) {
-    console.log('::warning::Kein gültiges Ladeende (z.B. nach Neustart) – kein geratener Import.');
+  if (!Number.isFinite(rbt) || !Number.isFinite(lccfc) || lccfc <= 0 || lccfc > rbt) {
+    if (peak) await peakRef.delete();
+    // Dauerhafter Betriebszustand: im Laufprotokoll sichtbar, keine Warnflut pro Poll.
+    console.log('Kein gültiges Ladeende (z.B. nach Neustart) – kein geratener Import.');
     return;
   }
   const sessionEnd = new Date(now.getTime() - (rbt - lccfc));
@@ -284,13 +291,14 @@ async function run() {
     : null;
   console.log(`maxKw=${maxKw ?? '—'} (aus ${peak?.samples ?? 0} Messpunkten)`);
 
+  if (!meterKey) console.log('::warning::eto fehlt oder ist ungültig – eingeschränkter Legacy-Abgleich über lch und Zeitpunkt.');
   const entry = {
-    // Cumulative Wh survives reboot; equal amounts in two real sessions have
-    // different meter endpoints. Never use kWh alone as a session identity.
-    id:           Number.isFinite(status.eto) && status.eto > 0
-      ? `goe-${serial}-${status.eto}`
+    // Gesamtzählerstand bleibt über Reboots erhalten. Zwei echte Ladungen mit
+    // gleichen kWh haben unterschiedliche Zähler-Endstände.
+    id:           meterKey
+      ? `goe-${serial}-${totalWh}`
       : Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
-    sessionKey:   Number.isFinite(status.eto) && status.eto > 0 ? `goe:${serial}:${status.eto}` : null,
+    sessionKey:   meterKey,
     sessionDate:  date,
     sessionTime:  time,
     date,
@@ -308,19 +316,22 @@ async function run() {
     created:      new Date().toISOString(),
   };
 
-  // Re-read inside the transaction: browser edits/deletions and overlapping
-  // imports must never be overwritten by the earlier settings read.
+  // In der Transaktion erneut lesen: Ein älterer Stand darf Änderungen aus
+  // Browser oder parallelem Import nicht überschreiben.
   const imported = await db.runTransaction(async tx => {
     const doc = await tx.get(docRef);
     const deleted = await tx.get(deletedRef);
+    const tracker = await tx.get(peakRef);
     const current = doc.exists ? doc.data() : {};
     const markers = deleted.exists ? deleted.data().entries || [] : [];
     const next = ChargeSync.importSession(current, markers, entry);
-    tx.set(docRef, { charges: next.charges }, { merge: true });
-    tx.set(deletedRef, { entries: next.deleted });
-    // Only consume after a successful import/known-session check, not before
-    // a failed household write. Workflow concurrency protects this tracker.
-    tx.delete(peakRef);
+    // Bekannte Idle-Session ohne Anreicherung: keinerlei erneute Daten-Writes.
+    if (next.changed) {
+      tx.set(docRef, { charges: next.charges }, { merge: true });
+      tx.set(deletedRef, { entries: next.deleted });
+    }
+    // Erst nach erfolgreicher Prüfung leeren. Fehler erhalten den Peak für Retry.
+    if (tracker.exists) tx.delete(peakRef);
     return next.imported;
   });
   console.log(imported
