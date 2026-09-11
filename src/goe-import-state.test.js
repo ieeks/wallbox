@@ -33,6 +33,24 @@ describe('go-e import state', () => {
     });
   });
 
+  it('behält die letzte Idle-Baseline über Wartezustand 4 vor dem Laden', () => {
+    const idle = advanceImportState(null, {
+      serial: '412740', car: 1, totalWh: 1096520, observedAt: 'a',
+    }).state;
+    const waiting = advanceImportState(idle, {
+      serial: '412740', car: 4, totalWh: 1096520, observedAt: 'b',
+    }).state;
+    const charging = advanceImportState(waiting, {
+      serial: '412740', car: 2, totalWh: 1101000, observedAt: 'c',
+    }).state;
+    const done = advanceImportState(charging, {
+      serial: '412740', car: 1, totalWh: 1174537, observedAt: 'd',
+    });
+
+    expect(done.completed).toEqual({ startEto: 1096520, endEto: 1174537, energyWh: 78017 });
+    expect(chooseSessionEnergy(done.completed, 78297).source).toBe('eto-delta');
+  });
+
   it('fällt nach Deployment mitten in einer Ladung auf wh zurück', () => {
     const charging = advanceImportState(null, {
       serial: '412740', car: 2, totalWh: 1150000, observedAt: '2026-08-29T07:00:00Z',
