@@ -11,7 +11,29 @@ Voraussetzungen:
 3. `projectedKwhTotal = sourceKwhTotal`,
 4. vollständiger `planHash` ist freigegeben,
 5. die zeilenweisen Legacy-Zuordnungen sind über `legacyApprovalRoot` eingefroren,
-6. der Workflow erzeugt unmittelbar vor dem Write ein frisches verschlüsseltes Backup und lädt es erfolgreich hoch.
+6. die Zuordnung besteht zusätzlich die strukturellen Plausibilitäts-Gates,
+7. der Workflow erzeugt unmittelbar vor dem Write ein frisches verschlüsseltes Backup und lädt es erfolgreich hoch.
+
+Die `legacyApprovalRoot` schützt die **Integrität** der freigegebenen Zuordnung, nicht deren fachliche Richtigkeit. Deshalb werden vor Phase 1 zusätzlich geprüft:
+
+- **Zähler-/Zeitordnung:** die Reihenfolge der unveränderten Bestands-Zeitstempel muss der monotonen Reihenfolge der data.v3-Zählerstände entsprechen,
+- **Zählerkette:** die zugeordnete Folge muss dasselbe Gap-Muster wie die Quelle besitzen; legitime historische Lücken (z. B. 39 Wh in der Inbetriebnahmephase) sind erlaubt,
+- **Mismatch-Profil:** normale Bestands-/Quellabweichungen dürfen höchstens 1,5 % betragen; maximal ein klarer Großausreißer ist zulässig (der bekannte April-Aggregat-Fall).
+
+Diese Prüfungen laufen vor dem Write auf der geplanten Zuordnung und nach dem simulierten bzw. tatsächlichen Identity-Backfill erneut auf dem Bestand.
+
+### Menschlich prüfbare Freigabezeilen
+
+Der verschlüsselte Reconciliation-Plan enthält für jedes Legacy-Match zusätzlich eine `review`-Ansicht mit:
+
+- Bestandsdatum und -zeit,
+- Bestands-kWh,
+- Quell-Start/-Ende,
+- Quell-kWh,
+- kWh-Abweichung,
+- Zählerstart/-ende.
+
+Der `rowHash` wird weiterhin **nur** über `chargeId + sessionKey + goeSessionId` gebildet. Die Review-Felder dienen ausschließlich der Anzeige und verändern die `legacyApprovalRoot` nicht.
 
 Phase 1 schreibt **nur**:
 
@@ -40,6 +62,7 @@ Erwartung:
 - alle Sessions matchen über `sessionKey` oder `goeSessionId`
 - neuer `planHash`
 - unverändert 0 unmatched / 0 Source-Inkonsistenzen
+- Zähler-/Zeitordnung und Zählerkette weiterhin konsistent
 
 ## Phase 2: `apply`
 
@@ -54,8 +77,9 @@ Zusätzliche Gates:
 - go-e Source-Fingerprint wird unmittelbar vor dem Write erneut geprüft,
 - Zielsumme entspricht exakt der data.v3-Session-Energiesumme,
 - Pre-Write-Backup wurde vor dem Write erfolgreich als Action-Artefakt hochgeladen,
+- Zähler-/Zeitordnung und Zählerkette bleiben konsistent,
 - der Write erfolgt in einer Firestore-Transaktion,
-- anschließend wird der geschriebene Bestand per Fingerprint verifiziert.
+- anschließend wird der geschriebene Bestand per Fingerprint und erneutem Reconciliation-Plan verifiziert.
 
 ## Manuelle Bestätigungen
 
@@ -67,6 +91,8 @@ Workflow `go-e Reconciliation Apply`:
 - `approved_plan_hash`: vollständiger Hash aus geprüftem Dry-Run
 - `approved_legacy_root`: vollständige `legacyApprovalRoot` aus geprüftem Dry-Run
 - `confirm`: `BACKFILL_IDENTITIES`
+
+Vor der Freigabe müssen die lesbaren Legacy-Review-Zeilen im verschlüsselten Plan geprüft werden; der Root-Hash allein ist keine fachliche Prüfung.
 
 ### Final Apply
 
