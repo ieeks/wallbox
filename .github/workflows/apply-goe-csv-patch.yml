@@ -13,6 +13,7 @@ permissions:
 
 jobs:
   patch-and-test:
+    # Branch-only helper: nach erfolgreichem Patch wieder entfernen.
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
