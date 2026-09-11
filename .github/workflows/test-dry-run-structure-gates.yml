@@ -1,0 +1,43 @@
+name: Validate unconditional reconciliation structure gates
+
+on:
+  push:
+    branches:
+      - fix/reconciliation-dry-run-structure-gates
+    paths:
+      - tools/trigger-dry-run-structure-gates.txt
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: fix/reconciliation-dry-run-structure-gates
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: node --check .github/scripts/goe-reconcile-dry-run.js
+      - name: Install Firestore dependency
+        run: npm install firebase-admin
+        working-directory: .github/scripts
+      - name: Fresh read-only reconciliation with unconditional structure gates
+        env:
+          GOE_SERIAL: ${{ secrets.GOE_SERIAL }}
+          GOE_TOKEN: ${{ secrets.GOE_TOKEN }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          RECON_BACKUP_KEY: ${{ secrets.RECON_BACKUP_KEY }}
+        run: node .github/scripts/goe-reconcile-dry-run.js
+      - name: Upload encrypted reconciliation bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: dry-run-structure-gates-validation
+          path: reconciliation-output/
+          if-no-files-found: error
+          retention-days: 7
