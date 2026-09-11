@@ -144,7 +144,7 @@ function recalculatedTotal(charge, newKwh) {
   return null;
 }
 
-export function buildReconciliationPlan(charges, sessions, { energyToleranceKwh = 0.02, sourceToleranceKwh = 0.01 } = {}) {
+export function buildReconciliationPlan(charges, sessions, { energyToleranceKwh = 0, sourceToleranceKwh = 0.01 } = {}) {
   const currentCharges = Array.isArray(charges) ? charges : [];
   const sourceSessions = Array.isArray(sessions) ? sessions : [];
   const usedChargeIds = new Set();
@@ -191,9 +191,15 @@ export function buildReconciliationPlan(charges, sessions, { energyToleranceKwh 
     fill('goeSessionId', session.goeSessionId);
     fill('meterStartWh', session.meterStartWh);
     fill('meterEndWh', session.meterEndWh);
-    fill('maxKw', session.maxKw);
     fill('dauer', session.dauer);
     fill('dauerGesamt', session.dauerGesamt);
+
+    // data.v3 stores the completed session's measured maximum. Existing go-e-auto
+    // values came from the 15-minute live sampler, so the export is the better
+    // historical source and may intentionally replace an already populated value.
+    if (session.maxKw !== null && Number(charge.maxKw) !== session.maxKw) {
+      changes.maxKw = { from: charge.maxKw ?? null, to: session.maxKw };
+    }
 
     if (correctEnergy) {
       changes.kwh = { from: oldKwh, to: session.meterKwh };
