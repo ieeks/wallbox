@@ -69,14 +69,23 @@ describe('go-e reconciliation', () => {
     expect(aggregate.mismatchKwh).toBe(17.611);
   });
 
-  it('lässt Mini-Abweichungen bis 0,02 kWh unangetastet', () => {
+  it('korrigiert auch kleine Wh-Abweichungen auf den exakten Zählerwert', () => {
     const sessions = parseDataV3Csv(csv([
       '1;412740_300;01.09.2026 10:00:00;01.09.2026 11:00:00;01:00:00;01:00:00;11,0;10,000;100,000;110,000',
     ]));
     const charges = [charge('tiny', '2026-09-01', '11:00', 10.018)];
     const plan = buildReconciliationPlan(charges, sessions);
-    expect(plan.matches[0].correctEnergy).toBe(false);
-    expect(plan.matches[0].changes.kwh).toBeUndefined();
+    expect(plan.matches[0].correctEnergy).toBe(true);
+    expect(plan.matches[0].changes.kwh).toEqual({ from: 10.018, to: 10 });
+  });
+
+  it('ersetzt einen vorhandenen Sampling-Peak durch den data.v3-Sessionpeak', () => {
+    const sessions = parseDataV3Csv(csv([
+      '1;412740_350;01.09.2026 10:00:00;01.09.2026 11:00:00;01:00:00;01:00:00;6,310;10,000;100,000;110,000',
+    ]));
+    const charges = [charge('peak', '2026-09-01', '11:00', 10, { maxKw: 6.28 })];
+    const plan = buildReconciliationPlan(charges, sessions);
+    expect(plan.matches[0].changes.maxKw).toEqual({ from: 6.28, to: 6.31 });
   });
 
   it('korrigiert keine Quelle, deren Energie und Zählerspanne sich widersprechen', () => {
