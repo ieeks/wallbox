@@ -7,7 +7,7 @@ import admin from 'firebase-admin';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { buildReconciliationPlan, parseDataV3Csv } from '../../src/goe-reconciliation.js';
+import { applyPlanToCharges, buildReconciliationPlan, parseDataV3Csv } from '../../src/goe-reconciliation.js';
 
 const serial = process.env.GOE_SERIAL;
 const token = process.env.GOE_TOKEN;
@@ -80,6 +80,7 @@ function canonical(value) {
 }
 
 const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
+const sumKwh = values => +values.reduce((sum, value) => sum + (Number.isFinite(Number(value)) ? Number(value) : 0), 0).toFixed(3);
 
 function encryptJson(value) {
   const key = crypto.createHash('sha256')
@@ -126,6 +127,10 @@ async function main() {
   const charges = Array.isArray(household.data?.charges) ? household.data.charges : [];
   const sessions = parseDataV3Csv(csv);
   const plan = buildReconciliationPlan(charges, sessions);
+  const projectedCharges = applyPlanToCharges(charges, plan, createdAt);
+  const sourceKwhTotal = sumKwh(sessions.map(s => s.meterKwh));
+  const currentKwhTotal = sumKwh(charges.map(c => c.kwh));
+  const projectedKwhTotal = sumKwh(projectedCharges.map(c => c.kwh));
   const currentFingerprint = sha256(canonical(charges));
   const sourceFingerprint = sha256(csv);
   const planPayload = {
@@ -137,6 +142,7 @@ async function main() {
     sourceCsv: csv,
     sourceSessions: sessions,
     plan,
+    totals: { sourceKwhTotal, currentKwhTotal, projectedKwhTotal },
   };
   const planHash = sha256(canonical({ currentFingerprint, sourceFingerprint, plan }));
   planPayload.planHash = planHash;
@@ -158,6 +164,9 @@ async function main() {
     createdAt,
     planHash: planHash.slice(0, 16),
     ...plan.summary,
+    sourceKwhTotal,
+    currentKwhTotal,
+    projectedKwhTotal,
   }, null, 2));
 
   const s = plan.summary;
@@ -171,6 +180,9 @@ async function main() {
   console.log(`largeMismatches=${s.largeMismatches}`);
   console.log(`metadataChanges=${s.metadataChanges}`);
   console.log(`sourceInconsistencies=${s.sourceInconsistencies}`);
+  console.log(`sourceKwhTotal=${sourceKwhTotal.toFixed(3)}`);
+  console.log(`currentKwhTotal=${currentKwhTotal.toFixed(3)}`);
+  console.log(`projectedKwhTotal=${projectedKwhTotal.toFixed(3)}`);
   console.log(`tripBackupDocuments=${trips.length}`);
   console.log(`planHash=${planHash.slice(0, 16)}`);
   console.log('Keine Firestore-Daten wurden verändert. Detailplan und Backup liegen ausschließlich verschlüsselt im Artefakt.');
@@ -180,6 +192,9 @@ async function main() {
   }
   if (s.unmatchedSource > 0 || s.unmatchedCharges > 0) {
     console.log('::warning::Nicht alle Sessions konnten 1:1 zugeordnet werden. Apply muss bis zur Klärung blockiert bleiben.');
+  }
+  if (s.unmatchedSource === 0 && s.unmatchedCharges === 0 && s.sourceInconsistencies === 0 && projectedKwhTotal !== sourceKwhTotal) {
+    throw new Error(`Projizierte Summe ${projectedKwhTotal.toFixed(3)} kWh entspricht nicht der Quelle ${sourceKwhTotal.toFixed(3)} kWh`);
   }
 }
 
