@@ -13,7 +13,7 @@ function charge(id, date, time, kwh, extra = {}) {
 }
 
 describe('go-e reconciliation', () => {
-  it('parst den präzisen data.v3 Export und nutzt die Zählerspanne', () => {
+  it('parst explizite Session-Energie und Zählerspanne getrennt', () => {
     const sessions = parseDataV3Csv(csv([
       '23;412740_1787945402;28.08.2026 21:30:02;29.08.2026 09:45:25;12:15:23;07:05:00;11,02;78,017;1096,52;1174,537',
     ]));
@@ -21,9 +21,10 @@ describe('go-e reconciliation', () => {
     expect(sessions[0]).toMatchObject({
       goeSessionId: '412740_1787945402',
       sessionKey: 'goe:412740:1174537',
+      energyKwh: 78.017,
       meterStartWh: 1096520,
       meterEndWh: 1174537,
-      meterKwh: 78.017,
+      meterSpanKwh: 78.017,
       sourceDeltaKwh: 0,
     });
   });
@@ -69,7 +70,7 @@ describe('go-e reconciliation', () => {
     expect(aggregate.mismatchKwh).toBe(17.611);
   });
 
-  it('korrigiert auch kleine Wh-Abweichungen auf den exakten Zählerwert', () => {
+  it('korrigiert auch kleine Wh-Abweichungen auf die explizite Session-Energie', () => {
     const sessions = parseDataV3Csv(csv([
       '1;412740_300;01.09.2026 10:00:00;01.09.2026 11:00:00;01:00:00;01:00:00;11,0;10,000;100,000;110,000',
     ]));
@@ -77,6 +78,17 @@ describe('go-e reconciliation', () => {
     const plan = buildReconciliationPlan(charges, sessions);
     expect(plan.matches[0].correctEnergy).toBe(true);
     expect(plan.matches[0].changes.kwh).toEqual({ from: 10.018, to: 10 });
+  });
+
+  it('akzeptiert eine 1-Wh-Rundungsdifferenz der kumulierten Zählerstände', () => {
+    const sessions = parseDataV3Csv(csv([
+      '1;412740_325;01.09.2026 10:00:00;01.09.2026 11:00:00;01:00:00;01:00:00;11,0;10,001;100,000;110,000',
+    ]));
+    const charges = [charge('rounding', '2026-09-01', '11:00', 10)];
+    const plan = buildReconciliationPlan(charges, sessions);
+    expect(sessions[0]).toMatchObject({ energyKwh: 10.001, meterSpanKwh: 10, sourceDeltaKwh: 0.001 });
+    expect(plan.summary.sourceInconsistencies).toBe(0);
+    expect(plan.matches[0].changes.kwh).toEqual({ from: 10, to: 10.001 });
   });
 
   it('ersetzt einen vorhandenen Sampling-Peak durch den data.v3-Sessionpeak', () => {
@@ -88,7 +100,7 @@ describe('go-e reconciliation', () => {
     expect(plan.matches[0].changes.maxKw).toEqual({ from: 6.28, to: 6.31 });
   });
 
-  it('korrigiert keine Quelle, deren Energie und Zählerspanne sich widersprechen', () => {
+  it('korrigiert keine Quelle, deren Energie und Zählerspanne sich deutlich widersprechen', () => {
     const sessions = parseDataV3Csv(csv([
       '1;412740_400;01.09.2026 10:00:00;01.09.2026 11:00:00;01:00:00;01:00:00;11,0;11,000;100,000;110,000',
     ]));
