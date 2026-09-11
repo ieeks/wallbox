@@ -1421,22 +1421,39 @@ function goeDateTime(raw) {
 }
 
 // Zuordnung CSV-Zeile → bestehende Ladung.
-// Die Uhrzeit taugt nicht als Schlüssel: die CSV speichert den Steckbeginn, der
-// go-e-Auto-Import den Ladeschluss – und mehr als die Hälfte der Sessions endet
-// an einem anderen Kalendertag, als sie beginnt. Ein date-Vergleich (wie vorher)
-// legt deshalb Duplikate an, statt die Zeile als bekannt zu erkennen.
-// kWh ist der starke Schlüssel. Bei mehreren Kandidaten (77,089 vs 77,086 liegen
-// 0,003 auseinander) entscheidet die Nähe zum Ladeende – aber nur, wenn der
-// Zweitbeste eindeutig weit weg ist.
-function matchExistingCharge(kwh, endeMs) {
-  const cand = charges.filter(c => Math.abs((c.kwh ?? 0) - kwh) < 0.01);
-  if(cand.length === 0) return null;
-  const dist = c => Math.abs(Date.parse(`${c.date}T${c.time || '12:00'}:00`) - endeMs);
-  if(!isFinite(endeMs)) return cand.length === 1 ? cand[0] : null;
-  const sorted = cand.slice().sort((a,b) => dist(a) - dist(b));
-  if(dist(sorted[0]) > 48*3600*1000) return null;   // zu weit weg → echte neue Ladung
-  if(sorted[1] && dist(sorted[1]) <= 24*3600*1000) return null; // nicht eindeutig
-  return sorted[0];
+// 1) geeichter Zähler-Endstand (sessionKey), 2) Export-Session-ID, erst danach
+// 3) ein konservativer Legacy-Fallback. Der Legacy-Pfad dient nur der einmaligen
+// Rückverknüpfung alter Einträge ohne stabile Kennung; Messwerte werden nie geändert.
+function matchExistingCharge(identity, kwh, endeMs) {
+  const sessionKey = identity?.sessionKey || null;
+  const goeSessionId = identity?.goeSessionId || null;
+
+  if(sessionKey) {
+    const exact = charges.find(c => c.sessionKey === sessionKey);
+    if(exact) return exact;
+  }
+  if(goeSessionId) {
+    const exact = charges.find(c => c.goeSessionId === goeSessionId);
+    if(exact) return exact;
+  }
+
+  const legacy = charges.filter(c => !c.sessionKey && !c.goeSessionId);
+  const ranked = legacy.map(c => {
+    const parsed = Date.parse(`${c.date}T${c.time || '12:00'}:00`);
+    const timeDist = isFinite(endeMs) && isFinite(parsed) ? Math.abs(parsed - endeMs) : Infinity;
+    const absKwh = Math.abs((c.kwh ?? 0) - kwh);
+    const relKwh = absKwh / Math.max(kwh, 0.001);
+    const energyClose = absKwh <= Math.max(1.25, kwh * 0.02);
+    const timeClose = timeDist <= 30 * 3600 * 1000;
+    const veryCloseTime = timeDist <= 8 * 3600 * 1000;
+    if(!timeClose || (!energyClose && !veryCloseTime)) return null;
+    const score = timeDist / 3600000 + Math.min(relKwh * 100, 50) * 0.25;
+    return { c, score };
+  }).filter(Boolean).sort((a,b) => a.score - b.score);
+
+  if(!ranked.length) return null;
+  if(ranked[1] && ranked[1].score - ranked[0].score < 2) return null; // uneindeutig → nichts raten
+  return ranked[0].c;
 }
 
 let importPreview = []; // Temporary storage for CSV preview
@@ -1479,6 +1496,21 @@ function processFile(file) {
       const cols = (csvRows[0] || []).map(normHeader);
       const iStart = findCol(cols, c => c === 'start');
       const iEnde = findCol(cols, c => c === 'ende');
+      const iSessionId = findCol(cols, c => c === 'session identifier', c => c === 'session id');
+      const iSerial = findCol(cols, c => c === 'charger-sn', c => c === 'charger sn', c => c === 'chargersn');
+      // Präzision hängt an der Exportvariante, nicht an der Zahl der gedruckten
+      // Nachkommastellen: data.v3 lässt nachlaufende Nullen weg (z.B. 1096,52),
+      // bleibt aber Wh-genau. Der App-Export ist dagegen grundsätzlich auf 10 Wh gerundet.
+      const iMeterStartData = findCol(cols,
+        c => c.includes('zählerstand anfang'), c => c.includes('zaehlerstand anfang'));
+      const iMeterEndData = findCol(cols,
+        c => c.includes('zählerstand ende'), c => c.includes('zaehlerstand ende'));
+      const iMeterStartApp = findCol(cols, c => c === 'zählerstart', c => c === 'zaehlerstart');
+      const iMeterEndApp = findCol(cols, c => c === 'zählerende', c => c === 'zaehlerende');
+      const iMeterStart = iMeterStartData >= 0 ? iMeterStartData : iMeterStartApp;
+      const iMeterEnd = iMeterEndData >= 0 ? iMeterEndData : iMeterEndApp;
+      const meterStartExact = iMeterStartData >= 0;
+      const meterEndExact = iMeterEndData >= 0;
       // "energie pv"/"energie akku" dürfen die Energiespalte nicht kapern.
       const iKwh = findCol(cols,
         c => c === 'energie [kwh]', c => c === 'energie',
@@ -1509,13 +1541,40 @@ function processFile(file) {
           const maxKw = isFinite(maxKwRaw) && maxKwRaw > 0 ? maxKwRaw : null;
           const dauerGesamt = iDauer >= 0 ? normDauer(parts[iDauer]) : null;
           const dauer = iDauerAktiv >= 0 ? normDauer(parts[iDauerAktiv]) : null;
+          const rawSessionId = iSessionId >= 0 ? (parts[iSessionId] || '').trim() || null : null;
+          const serialFromColumn = iSerial >= 0 ? (parts[iSerial] || '').trim() || null : null;
+          const serialMatch = rawSessionId ? rawSessionId.match(/^([^_]+)_/) : null;
+          const serial = serialFromColumn || (serialMatch ? serialMatch[1] : null);
+          // App-Export: Session ID = nur Unix-Startzeit; data.v3: <Serial>_<Unix>.
+          // Intern immer auf dieselbe kanonische Form bringen.
+          const goeSessionId = rawSessionId
+            ? (rawSessionId.includes('_') || !serial ? rawSessionId : `${serial}_${rawSessionId}`)
+            : null;
+          const meterStartRaw = iMeterStart >= 0 ? parts[iMeterStart] : '';
+          const meterEndRaw = iMeterEnd >= 0 ? parts[iMeterEnd] : '';
+          const meterStartKwh = parseNum(meterStartRaw);
+          const meterEndKwh = parseNum(meterEndRaw);
+          const meterStartWh = meterStartExact && isFinite(meterStartKwh) ? Math.round(meterStartKwh * 1000) : null;
+          const meterEndWh = meterEndExact && isFinite(meterEndKwh) ? Math.round(meterEndKwh * 1000) : null;
+          const sessionKey = serial && meterEndWh !== null ? `goe:${serial}:${meterEndWh}` : null;
 
           // Bereits bekannte Session → nicht neu anlegen, sondern fehlende
           // Felder ergänzen. Bestehende Werte werden nie überschrieben.
           const ende = iEnde >= 0 ? goeDateTime(parts[iEnde]) : null;
-          const existing = matchExistingCharge(kwh, ende ? ende.ms : NaN);
+          const existing = matchExistingCharge({ sessionKey, goeSessionId }, kwh, ende ? ende.ms : NaN);
           if(existing) {
             const patch = {};
+            if(sessionKey && !existing.sessionKey) patch.sessionKey = sessionKey;
+            if(goeSessionId && !existing.goeSessionId) patch.goeSessionId = goeSessionId;
+            if(meterStartWh !== null && existing.meterStartWh == null) patch.meterStartWh = meterStartWh;
+            if(meterEndWh !== null && existing.meterEndWh == null) patch.meterEndWh = meterEndWh;
+            if(meterStartWh !== null && meterEndWh !== null) {
+              const spanKwh = (meterEndWh - meterStartWh) / 1000;
+              const mismatch = existing.kwh - spanKwh;
+              if(Math.abs(mismatch) > 0.02 && existing.energyMismatchKwh == null) {
+                patch.energyMismatchKwh = +mismatch.toFixed(3);
+              }
+            }
             if(maxKw !== null && !(existing.maxKw > 0)) patch.maxKw = maxKw;
             if(dauerGesamt && !existing.dauerGesamt) patch.dauerGesamt = dauerGesamt;
             if(dauer && !existing.dauer) patch.dauer = dauer;
@@ -1529,7 +1588,9 @@ function processFile(file) {
           const ep = energyPriceFor(date);
           const r = calcTotal(kwh, ep, snap);
           importPreview.push({
-            id: Date.now().toString(36) + Math.random().toString(36).substr(2,5) + i,
+            id: sessionKey ? `goe-${serial}-${meterEndWh}` : Date.now().toString(36) + Math.random().toString(36).substr(2,5) + i,
+            sessionKey, goeSessionId, sessionDate: date, sessionTime: time || null,
+            meterStartWh, meterEndWh,
             date, time: time || null, snap, kwh, energyPrice: ep,
             total: Math.round(r.total*100)/100, bruttoPerKwh: r.bruttoPerKwh,
             source: 'go-e', maxKw, dauer, dauerGesamt,
@@ -1537,7 +1598,7 @@ function processFile(file) {
           });
         }
       } else {
-        const hasHeader = header.includes('date') || header.includes('datum');
+        const hasHeader = cols.includes('date') || cols.includes('datum');
         const start = hasHeader ? 1 : 0;
         for(let i = start; i < lines.length; i++) {
           const parts = lines[i].split(/[,;\t]/);
@@ -1587,7 +1648,11 @@ function showImportPreview() {
   const more = importPreview.length - show.length;
   const bfShow = importBackfill.slice(0, 5);
   const bfMore = importBackfill.length - bfShow.length;
-  const fieldLabel = { maxKw: 'max. Leistung', dauerGesamt: 'Steckdauer', dauer: 'Ladezeit' };
+  const fieldLabel = {
+    sessionKey: 'Zähler-ID', goeSessionId: 'Session-ID', meterStartWh: 'Zähler Start', meterEndWh: 'Zähler Ende',
+    energyMismatchKwh: 'Energie-Abweichung kWh',
+    maxKw: 'max. Leistung', dauerGesamt: 'Steckdauer', dauer: 'Ladezeit'
+  };
 
   area.innerHTML = `
     <div class="import-preview">

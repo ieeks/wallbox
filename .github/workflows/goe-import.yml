@@ -28,4 +28,4 @@ jobs:
           GOE_SERIAL: ${{ secrets.GOE_SERIAL }}
           GOE_TOKEN: ${{ secrets.GOE_TOKEN }}
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-        run: node .github/scripts/goe-import.js
+        run: node .github/scripts/goe-import-v2.js
