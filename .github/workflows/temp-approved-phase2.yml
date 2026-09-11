@@ -54,6 +54,7 @@ jobs:
           retention-days: 30
 
       - name: Capture invariant charge fields before write
+        working-directory: .github/scripts
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
@@ -100,6 +101,7 @@ jobs:
         run: node .github/scripts/goe-reconcile-apply.js
 
       - name: Verify date time snap energyPrice unchanged
+        working-directory: .github/scripts
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
