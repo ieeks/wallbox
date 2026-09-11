@@ -1,0 +1,98 @@
+name: Temporary v1.17.0 docs and asset sync
+
+on:
+  push:
+    branches:
+      - chore/v1.17.0-doc-cache-sync
+    paths:
+      - tools/trigger-v117-doc-sync.txt
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: chore/v1.17.0-doc-cache-sync
+          fetch-depth: 0
+
+      - name: Update asset version and CLAUDE.md
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text, old, new, label):
+              if old not in text:
+                  raise SystemExit(f'missing expected text: {label}')
+              return text.replace(old, new, 1)
+
+          index = Path('index.html')
+          html = index.read_text()
+          count = html.count('?v=1.16.3')
+          if count != 4:
+              raise SystemExit(f'expected 4 asset refs at v1.16.3, found {count}')
+          html = html.replace('?v=1.16.3', '?v=1.17.0')
+          index.write_text(html)
+
+          claude = Path('CLAUDE.md')
+          text = claude.read_text()
+          text = replace_once(text,
+              '## Aktuelle Version: 1.16.3',
+              '## Aktuelle Version: 1.17.0',
+              'current version')
+          text = replace_once(text,
+              '**Dateien:** `.github/workflows/goe-import.yml`, `.github/scripts/goe-import.js`',
+              '**Dateien:** `.github/workflows/goe-import.yml`, `.github/scripts/goe-import-v2.js`, `src/goe-import-state.js`',
+              'auto import files')
+          text = replace_once(text,
+              'erst dann rot. Kein Datenverlust dabei: die Session steht bis zur nächsten in `wh`/`lch`,\nund der Zeitstempel aus `now - (rbt - lccfc)` stimmt auch Stunden später noch. Was fehlt,\nist der Peak – `nrg[11]` wird nur bei `car === 2` abgetastet.',
+              'erst dann rot. Kein Datenverlust dabei: wenn eine belastbare Idle-Baseline beobachtet wurde,\nwird die Session-Energie beim nächsten erfolgreichen Poll aus dem `eto`-Zählerdelta rekonstruiert;\nfehlt diese Baseline (z.B. Deployment mitten in der Ladung), bleibt `wh` nur als Fallback.\nDer Zeitstempel aus `now - (rbt - lccfc)` stimmt auch Stunden später noch. Was fehlt,\nist der Peak – `nrg[11]` wird nur bei `car === 2` abgetastet.',
+              'offline energy wording')
+          text = replace_once(text,
+              '**Erkennungslogik (ab v1.16.2):**\n- `car === 1` + mindestens 10 Wh + gültiger Session-Endzeitpunkt.',
+              '**Erkennungslogik (ab v1.17.0):**\n- `car === 1` + gültiger Session-Endzeitpunkt + importierbare Energiemenge.\n- Energiequelle primär: `eto`-Delta zwischen belastbarer Idle-Baseline und Session-Ende (`energySource = \'eto-delta\'`).\n- `wh` ist nur Fallback, wenn keine vertrauenswürdige `eto`-Baseline existiert (z.B. Deployment mitten in einer Ladung).',
+              'recognition logic')
+          text = replace_once(text,
+              '- `dauerGesamt` = null (nicht über API verfügbar)\n- `source` = \'go-e-auto\'\n- `maxKw` aus dem **Peak-Tracker**, nicht aus `nrg[11]` zum Importzeitpunkt',
+              '- `dauerGesamt` = `null` im laufenden Cloud-API-Auto-Import; der data.v3-Export liefert den Wert. Die 23 reconcilierten Bestandseinträge wurden damit rückwirkend ergänzt.\n- `source` = \'go-e-auto\'\n- `energySource` = bevorzugt `\'eto-delta\'`, nur bei fehlender belastbarer Baseline `\'wh-fallback\'`\n- `meterStartWh` / `meterEndWh` dokumentieren die verwendete `eto`-Spanne, soweit verfügbar\n- `maxKw` aus dem **Peak-Tracker** beim laufenden Auto-Import; historische Bestandseinträge wurden aus dem data.v3-Export auf den Completed-Session-Peak reconciliert',
+              'charge fields')
+          text = replace_once(text,
+              '- Session-Reset erkannt über `wh` (fällt = neue Session) und `rbt` (fällt = Reboot).',
+              '- Session-Reset **des Peak-Trackers** erkannt über `wh` (fällt = neue Session) und `rbt` (fällt = Reboot). `wh` ist hier nur ein Reset-Signal, nicht die primäre Energiequelle; die Import-Energie kommt bevorzugt aus dem `eto`-Delta.',
+              'peak reset wording')
+          text = replace_once(text,
+              '- Ohne Tracking-Daten bleibt `maxKw` **`null`** – kein Fallback auf `nrg[11]`, denn 0 ist\n  kein Maximum. Die 15 Einträge vor v1.10.3 haben deshalb `maxKw: 0` (nicht rückwirkend\n  reparierbar, die API liefert keine Historie).',
+              '- Ohne Live-Tracking-Daten bleibt `maxKw` bei einer neuen API-only-Session **`null`** – kein Fallback auf `nrg[11]`, denn 0 ist kein Maximum.\n- Der historische Altbestand ist inzwischen repariert: der data.v3-Export liefert Completed-Session-Peaks; die früheren `maxKw: 0`-Einträge wurden rückwirkend reconciliert.',
+              'historical maxKw')
+          text = replace_once(text,
+              '- Monate ohne jeden `maxKw`-Wert zeigen `—` und einen Stummel-Balken – **nicht** 0.\n  Ein Peak von 0 wäre eine Falschaussage, kein fehlender Wert.',
+              '- Der aktuell reconciliierte Bestand hat für alle 23 Sessions einen `maxKw`-Wert; ein Monat ohne jeden Peak tritt derzeit nicht mehr auf.\n  Der Rendering-Fallback bleibt trotzdem korrekt: fehlen bei zukünftigen Daten sämtliche Peaks, zeigt der Monat `—` statt 0.',
+              'monthly peak wording')
+
+          anchor = '**GitHub Secrets (Settings → Secrets → Actions):**'
+          block = '''**Historischer Bestand nach Reconciliation (11.09.2026):**\n- 23/23 go-e-Sessions sind stabil über `sessionKey` / `goeSessionId` zugeordnet; kein Legacy-Matching mehr.\n- Autoritative Energiequelle für den Bestand ist `Energie [kWh]` aus data.v3; aktuelle Summe: **1.174,499 kWh**.\n- Folge-Dry-Run nach dem Apply: `energyCorrections=0`, `meterOrderGate=passed`, `meterChainGate=passed`.\n- `maxKw` und `dauerGesamt` wurden aus data.v3 rückwirkend ergänzt; `date`, `time`, `snap` und `energyPrice` blieben unverändert.\n\n'''
+          if block not in text:
+              text = replace_once(text, anchor, block + anchor, 'reconciliation anchor')
+
+          claude.write_text(text)
+          PY
+
+      - name: Verify replacements
+        run: |
+          grep -n '1.17.0' index.html CLAUDE.md
+          if grep -q 'v=1.16.3' index.html; then
+            echo 'stale asset version remains' >&2
+            exit 1
+          fi
+          grep -n 'eto.*Delta\|eto.*delta\|energyCorrections=0\|23/23' CLAUDE.md
+
+      - name: Commit changes
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html CLAUDE.md
+          git commit -m 'chore: align cache version and reconciliation docs v1.17.0'
+          git push origin HEAD:chore/v1.17.0-doc-cache-sync
