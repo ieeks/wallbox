@@ -128,7 +128,8 @@ async function main() {
   const sessions = parseDataV3Csv(csv);
   const plan = buildReconciliationPlan(charges, sessions);
   const projectedCharges = applyPlanToCharges(charges, plan, createdAt);
-  const sourceKwhTotal = sumKwh(sessions.map(s => s.meterKwh));
+  const sourceKwhTotal = sumKwh(sessions.map(s => s.energyKwh));
+  const meterSpanKwhTotal = sumKwh(sessions.map(s => s.meterSpanKwh));
   const currentKwhTotal = sumKwh(charges.map(c => c.kwh));
   const projectedKwhTotal = sumKwh(projectedCharges.map(c => c.kwh));
   const currentFingerprint = sha256(canonical(charges));
@@ -142,7 +143,7 @@ async function main() {
     sourceCsv: csv,
     sourceSessions: sessions,
     plan,
-    totals: { sourceKwhTotal, currentKwhTotal, projectedKwhTotal },
+    totals: { sourceKwhTotal, meterSpanKwhTotal, currentKwhTotal, projectedKwhTotal },
   };
   const planHash = sha256(canonical({ currentFingerprint, sourceFingerprint, plan }));
   planPayload.planHash = planHash;
@@ -165,6 +166,7 @@ async function main() {
     planHash: planHash.slice(0, 16),
     ...plan.summary,
     sourceKwhTotal,
+    meterSpanKwhTotal,
     currentKwhTotal,
     projectedKwhTotal,
   }, null, 2));
@@ -181,6 +183,7 @@ async function main() {
   console.log(`metadataChanges=${s.metadataChanges}`);
   console.log(`sourceInconsistencies=${s.sourceInconsistencies}`);
   console.log(`sourceKwhTotal=${sourceKwhTotal.toFixed(3)}`);
+  console.log(`meterSpanKwhTotal=${meterSpanKwhTotal.toFixed(3)}`);
   console.log(`currentKwhTotal=${currentKwhTotal.toFixed(3)}`);
   console.log(`projectedKwhTotal=${projectedKwhTotal.toFixed(3)}`);
   console.log(`tripBackupDocuments=${trips.length}`);
