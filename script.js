@@ -1390,16 +1390,6 @@ function parseNum(raw) {
   return parseFloat(s.includes(',') ? s.replace(/\./g, '').replace(',', '.') : s);
 }
 
-// Anzahl tatsächlich gelieferter Dezimalstellen. Wichtig für die Identity Bridge:
-// data.v3 liefert den Zähler auf 1 Wh genau (3 Nachkommastellen kWh), der
-// App-Export nur auf 10 Wh (2 Nachkommastellen) und darf daher keinen exakten
-// eto/sessionKey vortäuschen.
-function decimalPlaces(raw) {
-  const s = (raw || '').trim();
-  const i = Math.max(s.lastIndexOf(','), s.lastIndexOf('.'));
-  return i >= 0 ? s.length - i - 1 : 0;
-}
-
 const secToDauer = sec =>
   Math.floor(sec/3600) + ':' + String(Math.floor((sec%3600)/60)).padStart(2,'0') + ':' + String(sec%60).padStart(2,'0');
 
@@ -1508,12 +1498,19 @@ function processFile(file) {
       const iEnde = findCol(cols, c => c === 'ende');
       const iSessionId = findCol(cols, c => c === 'session identifier', c => c === 'session id');
       const iSerial = findCol(cols, c => c === 'charger-sn', c => c === 'charger sn', c => c === 'chargersn');
-      const iMeterStart = findCol(cols,
-        c => c.includes('zählerstand anfang'), c => c.includes('zaehlerstand anfang'),
-        c => c === 'zählerstart', c => c === 'zaehlerstart');
-      const iMeterEnd = findCol(cols,
-        c => c.includes('zählerstand ende'), c => c.includes('zaehlerstand ende'),
-        c => c === 'zählerende', c => c === 'zaehlerende');
+      // Präzision hängt an der Exportvariante, nicht an der Zahl der gedruckten
+      // Nachkommastellen: data.v3 lässt nachlaufende Nullen weg (z.B. 1096,52),
+      // bleibt aber Wh-genau. Der App-Export ist dagegen grundsätzlich auf 10 Wh gerundet.
+      const iMeterStartData = findCol(cols,
+        c => c.includes('zählerstand anfang'), c => c.includes('zaehlerstand anfang'));
+      const iMeterEndData = findCol(cols,
+        c => c.includes('zählerstand ende'), c => c.includes('zaehlerstand ende'));
+      const iMeterStartApp = findCol(cols, c => c === 'zählerstart', c => c === 'zaehlerstart');
+      const iMeterEndApp = findCol(cols, c => c === 'zählerende', c => c === 'zaehlerende');
+      const iMeterStart = iMeterStartData >= 0 ? iMeterStartData : iMeterStartApp;
+      const iMeterEnd = iMeterEndData >= 0 ? iMeterEndData : iMeterEndApp;
+      const meterStartExact = iMeterStartData >= 0;
+      const meterEndExact = iMeterEndData >= 0;
       // "energie pv"/"energie akku" dürfen die Energiespalte nicht kapern.
       const iKwh = findCol(cols,
         c => c === 'energie [kwh]', c => c === 'energie',
@@ -1557,10 +1554,8 @@ function processFile(file) {
           const meterEndRaw = iMeterEnd >= 0 ? parts[iMeterEnd] : '';
           const meterStartKwh = parseNum(meterStartRaw);
           const meterEndKwh = parseNum(meterEndRaw);
-          const meterStartExact = isFinite(meterStartKwh) && decimalPlaces(meterStartRaw) >= 3;
-          const meterEndExact = isFinite(meterEndKwh) && decimalPlaces(meterEndRaw) >= 3;
-          const meterStartWh = meterStartExact ? Math.round(meterStartKwh * 1000) : null;
-          const meterEndWh = meterEndExact ? Math.round(meterEndKwh * 1000) : null;
+          const meterStartWh = meterStartExact && isFinite(meterStartKwh) ? Math.round(meterStartKwh * 1000) : null;
+          const meterEndWh = meterEndExact && isFinite(meterEndKwh) ? Math.round(meterEndKwh * 1000) : null;
           const sessionKey = serial && meterEndWh !== null ? `goe:${serial}:${meterEndWh}` : null;
 
           // Bereits bekannte Session → nicht neu anlegen, sondern fehlende
@@ -1573,6 +1568,13 @@ function processFile(file) {
             if(goeSessionId && !existing.goeSessionId) patch.goeSessionId = goeSessionId;
             if(meterStartWh !== null && existing.meterStartWh == null) patch.meterStartWh = meterStartWh;
             if(meterEndWh !== null && existing.meterEndWh == null) patch.meterEndWh = meterEndWh;
+            if(meterStartWh !== null && meterEndWh !== null) {
+              const spanKwh = (meterEndWh - meterStartWh) / 1000;
+              const mismatch = existing.kwh - spanKwh;
+              if(Math.abs(mismatch) > 0.02 && existing.energyMismatchKwh == null) {
+                patch.energyMismatchKwh = +mismatch.toFixed(3);
+              }
+            }
             if(maxKw !== null && !(existing.maxKw > 0)) patch.maxKw = maxKw;
             if(dauerGesamt && !existing.dauerGesamt) patch.dauerGesamt = dauerGesamt;
             if(dauer && !existing.dauer) patch.dauer = dauer;
@@ -1648,6 +1650,7 @@ function showImportPreview() {
   const bfMore = importBackfill.length - bfShow.length;
   const fieldLabel = {
     sessionKey: 'Zähler-ID', goeSessionId: 'Session-ID', meterStartWh: 'Zähler Start', meterEndWh: 'Zähler Ende',
+    energyMismatchKwh: 'Energie-Abweichung kWh',
     maxKw: 'max. Leistung', dauerGesamt: 'Steckdauer', dauer: 'Ladezeit'
   };
 
