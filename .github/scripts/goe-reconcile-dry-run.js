@@ -12,7 +12,12 @@ import { buildReconciliationPlan, parseDataV3Csv } from '../../src/goe-reconcili
 const serial = process.env.GOE_SERIAL;
 const token = process.env.GOE_TOKEN;
 const serviceAccountRaw = process.env.FIREBASE_SERVICE_ACCOUNT;
-if (!serial || !token || !serviceAccountRaw) throw new Error('GOE_SERIAL, GOE_TOKEN und FIREBASE_SERVICE_ACCOUNT sind erforderlich');
+const backupKeyRaw = process.env.RECON_BACKUP_KEY;
+if (!serial || !token || !serviceAccountRaw || !backupKeyRaw) {
+  throw new Error('GOE_SERIAL, GOE_TOKEN, FIREBASE_SERVICE_ACCOUNT und RECON_BACKUP_KEY sind erforderlich');
+}
+const backupKeyBytes = Buffer.from(backupKeyRaw, 'base64');
+if (backupKeyBytes.length < 32) throw new Error('RECON_BACKUP_KEY muss mindestens 32 zufällige Bytes als Base64 enthalten');
 
 const serviceAccount = JSON.parse(serviceAccountRaw);
 admin.initializeApp({ credential: admin.credential.cert(serviceAccount), projectId: serviceAccount.project_id });
@@ -79,7 +84,7 @@ const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
 function encryptJson(value) {
   const key = crypto.createHash('sha256')
     .update('ladefuchs-goe-reconciliation-backup-v1\0')
-    .update(serviceAccountRaw)
+    .update(backupKeyBytes)
     .digest();
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
@@ -89,7 +94,7 @@ function encryptJson(value) {
   return {
     schema: 'ladefuchs-encrypted-artifact-v1',
     algorithm: 'AES-256-GCM',
-    keyHint: 'SHA-256(context + FIREBASE_SERVICE_ACCOUNT-at-backup-time)',
+    keyHint: 'SHA-256(context + RECON_BACKUP_KEY)',
     iv: iv.toString('base64'),
     tag: tag.toString('base64'),
     ciphertext: ciphertext.toString('base64'),
