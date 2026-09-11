@@ -1,0 +1,35 @@
+name: Validate reconciliation review fixes
+
+on:
+  push:
+    branches:
+      - feat/goe-reconciliation-p1
+    paths:
+      - tools/run-goe-reconcile-review.txt
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: feat/goe-reconciliation-p1
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - name: Install Firestore dependency
+        run: npm install firebase-admin
+        working-directory: .github/scripts
+      - name: Live read-only dry run without artifact upload
+        env:
+          GOE_SERIAL: ${{ secrets.GOE_SERIAL }}
+          GOE_TOKEN: ${{ secrets.GOE_TOKEN }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          RECON_BACKUP_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+        run: node .github/scripts/goe-reconcile-dry-run.js
