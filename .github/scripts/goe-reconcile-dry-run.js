@@ -144,7 +144,7 @@ async function main() {
     currentFingerprint,
   };
 
-  const outDir = path.resolve('.reconciliation-output');
+  const outDir = path.resolve('reconciliation-output');
   await fs.mkdir(outDir, { recursive: true });
   await fs.writeFile(path.join(outDir, 'firestore-backup.enc.json'), JSON.stringify(encryptJson(backup)));
   await fs.writeFile(path.join(outDir, 'reconciliation-plan.enc.json'), JSON.stringify(encryptJson(planPayload)));
