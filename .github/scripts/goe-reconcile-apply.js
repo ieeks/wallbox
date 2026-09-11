@@ -10,6 +10,9 @@ import { applyPlanToCharges, buildReconciliationPlan, parseDataV3Csv } from '../
 import {
   assertFinalApplyReady,
   assertIdentityBackfillReady,
+  assertLegacyMappingStructurallyConsistent,
+  assertMeterChainConsistent,
+  assertMeterOrderConsistent,
   assertReconciliationGates,
   canonical,
   identityBackfillToCharges,
@@ -95,7 +98,7 @@ function planTotals(charges, sessions, plan, at) {
 async function loadPreparedSummary() {
   const raw = await fs.readFile('reconciliation-output/summary.json', 'utf8');
   const summary = JSON.parse(raw);
-  if (summary.schemaVersion < 2 || !summary.planHash || !summary.currentFingerprint || !summary.sourceFingerprint) {
+  if (summary.schemaVersion < 3 || !summary.planHash || !summary.currentFingerprint || !summary.sourceFingerprint) {
     throw new Error('Vorbereiteter Dry-Run enthält nicht die erforderlichen Apply-Gates');
   }
   return summary;
@@ -129,17 +132,25 @@ async function main() {
   if (phase === 'identity-backfill') {
     const approvedLegacyRoot = validateOnly ? prepared.legacyApprovalRoot : approvedLegacyRootInput;
     assertIdentityBackfillReady(plan, approvedLegacyRoot, hashes.legacyApprovalRoot);
+    // The approval root protects integrity; these checks independently test
+    // whether the matcher output is structurally plausible before trusting it.
+    assertLegacyMappingStructurallyConsistent(charges, sessions, plan);
     if (!validateOnly && confirmation !== 'BACKFILL_IDENTITIES') {
       throw new Error('Bestätigung fehlt: RECON_CONFIRM muss BACKFILL_IDENTITIES sein');
     }
     nextCharges = identityBackfillToCharges(rawCharges, plan, at);
-    const simulatedPlan = buildReconciliationPlan(plain(nextCharges), sessions);
+    const nextPlain = plain(nextCharges);
+    const simulatedPlan = buildReconciliationPlan(nextPlain, sessions);
     assertFinalApplyReady(simulatedPlan);
+    assertMeterOrderConsistent(nextPlain, sessions, simulatedPlan);
+    assertMeterChainConsistent(nextPlain, sessions, simulatedPlan);
     if (simulatedPlan.summary.unmatchedSource || simulatedPlan.summary.unmatchedCharges) {
       throw new Error('Simulation nach Identity-Backfill ist nicht mehr 1:1 zuordenbar');
     }
   } else {
     assertFinalApplyReady(plan);
+    assertMeterOrderConsistent(charges, sessions, plan);
+    assertMeterChainConsistent(charges, sessions, plan);
     if (!validateOnly && confirmation !== 'APPLY_RECONCILIATION') {
       throw new Error('Bestätigung fehlt: RECON_CONFIRM muss APPLY_RECONCILIATION sein');
     }
@@ -150,6 +161,8 @@ async function main() {
     }
     const simulatedPlan = buildReconciliationPlan(nextPlain, sessions);
     assertFinalApplyReady(simulatedPlan);
+    assertMeterOrderConsistent(nextPlain, sessions, simulatedPlan);
+    assertMeterChainConsistent(nextPlain, sessions, simulatedPlan);
     if (simulatedPlan.summary.energyCorrections !== 0) throw new Error('Simulation des Voll-Apply lässt Energiekorrekturen offen');
   }
 
@@ -158,6 +171,7 @@ async function main() {
   console.log(`validateOnly=${validateOnly}`);
   console.log(`matched=${plan.summary.matched}`);
   console.log(`matchMethods=${JSON.stringify(methods)}`);
+  console.log(`structuralMappingGate=passed`);
   console.log(`planHash=${hashes.planHash}`);
   console.log(`legacyApprovalRoot=${hashes.legacyApprovalRoot || 'none'}`);
 
@@ -185,6 +199,14 @@ async function main() {
   const verifyCharges = plain(Array.isArray(verifySnap.data()?.charges) ? verifySnap.data().charges : []);
   const expectedFingerprint = sha256(canonical(plain(nextCharges)));
   if (sha256(canonical(verifyCharges)) !== expectedFingerprint) throw new Error('Post-Write-Verifikation fehlgeschlagen');
+
+  const verifyPlan = buildReconciliationPlan(verifyCharges, sessions);
+  assertFinalApplyReady(verifyPlan);
+  assertMeterOrderConsistent(verifyCharges, sessions, verifyPlan);
+  assertMeterChainConsistent(verifyCharges, sessions, verifyPlan);
+  if (phase === 'apply' && verifyPlan.summary.energyCorrections !== 0) {
+    throw new Error('Post-Write-Verifikation: Energiekorrekturen bleiben offen');
+  }
 
   console.log(phase === 'identity-backfill'
     ? 'Identity-Backfill erfolgreich. Jetzt zwingend neuen Dry-Run ausführen; Voll-Apply bleibt bis 0 Legacy-Matches blockiert.'
