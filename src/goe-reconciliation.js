@@ -88,10 +88,11 @@ export function parseDataV3Csv(text) {
     const serial = serialMatch[1];
     const meterStartWh = Math.round(meterStartKwh * 1000);
     const meterEndWh = Math.round(meterEndKwh * 1000);
-    const meterKwh = (meterEndWh - meterStartWh) / 1000;
-    // The meter span is the authoritative quantity. The exported energy column is
-    // kept for diagnostics; an unexpectedly large disagreement blocks correction.
-    const sourceDeltaKwh = +(energyKwh - meterKwh).toFixed(3);
+    const meterSpanKwh = +((meterEndWh - meterStartWh) / 1000).toFixed(3);
+    // `Energie [kWh]` is the explicit completed-session energy and is the
+    // reconciliation target. Meter start/end are rounded cumulative readings;
+    // their span is retained as an independent plausibility check and identity.
+    const sourceDeltaKwh = +(energyKwh - meterSpanKwh).toFixed(3);
     sessions.push({
       goeSessionId,
       serial,
@@ -101,7 +102,7 @@ export function parseDataV3Csv(text) {
       energyKwh,
       meterStartWh,
       meterEndWh,
-      meterKwh: +meterKwh.toFixed(3),
+      meterSpanKwh,
       sourceDeltaKwh,
       maxKw: iMaxKw >= 0 && Number.isFinite(parseNum(row[iMaxKw])) ? parseNum(row[iMaxKw]) : null,
       dauer: iDuration >= 0 ? String(row[iDuration] ?? '').trim() || null : null,
@@ -125,9 +126,9 @@ function legacyScore(charge, session) {
   if (timeDistHours > 30) return null;
   const oldKwh = Number(charge.kwh);
   if (!Number.isFinite(oldKwh)) return null;
-  const absKwh = Math.abs(oldKwh - session.meterKwh);
-  const relKwh = absKwh / Math.max(session.meterKwh, 0.001);
-  const energyClose = absKwh <= Math.max(1.25, session.meterKwh * 0.02);
+  const absKwh = Math.abs(oldKwh - session.energyKwh);
+  const relKwh = absKwh / Math.max(session.energyKwh, 0.001);
+  const energyClose = absKwh <= Math.max(1.25, session.energyKwh * 0.02);
   const veryCloseTime = timeDistHours <= 8;
   if (!energyClose && !veryCloseTime) return null;
   return timeDistHours + Math.min(relKwh * 100, 50) * 0.25;
@@ -177,7 +178,7 @@ export function buildReconciliationPlan(charges, sessions, { energyToleranceKwh 
     usedChargeIds.add(charge.id);
 
     const oldKwh = Number(charge.kwh);
-    const mismatchKwh = Number.isFinite(oldKwh) ? +(oldKwh - session.meterKwh).toFixed(3) : null;
+    const mismatchKwh = Number.isFinite(oldKwh) ? +(oldKwh - session.energyKwh).toFixed(3) : null;
     const sourceConsistent = Math.abs(session.sourceDeltaKwh) <= sourceToleranceKwh;
     const correctEnergy = sourceConsistent && mismatchKwh !== null && Math.abs(mismatchKwh) > energyToleranceKwh;
     const changes = {};
@@ -202,8 +203,8 @@ export function buildReconciliationPlan(charges, sessions, { energyToleranceKwh 
     }
 
     if (correctEnergy) {
-      changes.kwh = { from: oldKwh, to: session.meterKwh };
-      const newTotal = recalculatedTotal(charge, session.meterKwh);
+      changes.kwh = { from: oldKwh, to: session.energyKwh };
+      const newTotal = recalculatedTotal(charge, session.energyKwh);
       if (newTotal !== null && Number(charge.total) !== newTotal) changes.total = { from: charge.total ?? null, to: newTotal };
       if (charge.energyMismatchKwh !== undefined) changes.energyMismatchKwh = { from: charge.energyMismatchKwh, to: null };
     } else if (mismatchKwh !== null && Math.abs(mismatchKwh) > energyToleranceKwh) {
