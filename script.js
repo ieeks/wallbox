@@ -1390,6 +1390,16 @@ function parseNum(raw) {
   return parseFloat(s.includes(',') ? s.replace(/\./g, '').replace(',', '.') : s);
 }
 
+// Anzahl tatsächlich gelieferter Dezimalstellen. Wichtig für die Identity Bridge:
+// data.v3 liefert den Zähler auf 1 Wh genau (3 Nachkommastellen kWh), der
+// App-Export nur auf 10 Wh (2 Nachkommastellen) und darf daher keinen exakten
+// eto/sessionKey vortäuschen.
+function decimalPlaces(raw) {
+  const s = (raw || '').trim();
+  const i = Math.max(s.lastIndexOf(','), s.lastIndexOf('.'));
+  return i >= 0 ? s.length - i - 1 : 0;
+}
+
 const secToDauer = sec =>
   Math.floor(sec/3600) + ':' + String(Math.floor((sec%3600)/60)).padStart(2,'0') + ':' + String(sec%60).padStart(2,'0');
 
@@ -1497,8 +1507,13 @@ function processFile(file) {
       const iStart = findCol(cols, c => c === 'start');
       const iEnde = findCol(cols, c => c === 'ende');
       const iSessionId = findCol(cols, c => c === 'session identifier', c => c === 'session id');
-      const iMeterStart = findCol(cols, c => c.includes('zählerstand anfang'), c => c.includes('zaehlerstand anfang'));
-      const iMeterEnd = findCol(cols, c => c.includes('zählerstand ende'), c => c.includes('zaehlerstand ende'));
+      const iSerial = findCol(cols, c => c === 'charger-sn', c => c === 'charger sn', c => c === 'chargersn');
+      const iMeterStart = findCol(cols,
+        c => c.includes('zählerstand anfang'), c => c.includes('zaehlerstand anfang'),
+        c => c === 'zählerstart', c => c === 'zaehlerstart');
+      const iMeterEnd = findCol(cols,
+        c => c.includes('zählerstand ende'), c => c.includes('zaehlerstand ende'),
+        c => c === 'zählerende', c => c === 'zaehlerende');
       // "energie pv"/"energie akku" dürfen die Energiespalte nicht kapern.
       const iKwh = findCol(cols,
         c => c === 'energie [kwh]', c => c === 'energie',
@@ -1529,13 +1544,23 @@ function processFile(file) {
           const maxKw = isFinite(maxKwRaw) && maxKwRaw > 0 ? maxKwRaw : null;
           const dauerGesamt = iDauer >= 0 ? normDauer(parts[iDauer]) : null;
           const dauer = iDauerAktiv >= 0 ? normDauer(parts[iDauerAktiv]) : null;
-          const goeSessionId = iSessionId >= 0 ? (parts[iSessionId] || '').trim() || null : null;
-          const serialMatch = goeSessionId ? goeSessionId.match(/^([^_]+)_/) : null;
-          const serial = serialMatch ? serialMatch[1] : null;
-          const meterStartKwh = iMeterStart >= 0 ? parseNum(parts[iMeterStart]) : NaN;
-          const meterEndKwh = iMeterEnd >= 0 ? parseNum(parts[iMeterEnd]) : NaN;
-          const meterStartWh = isFinite(meterStartKwh) ? Math.round(meterStartKwh * 1000) : null;
-          const meterEndWh = isFinite(meterEndKwh) ? Math.round(meterEndKwh * 1000) : null;
+          const rawSessionId = iSessionId >= 0 ? (parts[iSessionId] || '').trim() || null : null;
+          const serialFromColumn = iSerial >= 0 ? (parts[iSerial] || '').trim() || null : null;
+          const serialMatch = rawSessionId ? rawSessionId.match(/^([^_]+)_/) : null;
+          const serial = serialFromColumn || (serialMatch ? serialMatch[1] : null);
+          // App-Export: Session ID = nur Unix-Startzeit; data.v3: <Serial>_<Unix>.
+          // Intern immer auf dieselbe kanonische Form bringen.
+          const goeSessionId = rawSessionId
+            ? (rawSessionId.includes('_') || !serial ? rawSessionId : `${serial}_${rawSessionId}`)
+            : null;
+          const meterStartRaw = iMeterStart >= 0 ? parts[iMeterStart] : '';
+          const meterEndRaw = iMeterEnd >= 0 ? parts[iMeterEnd] : '';
+          const meterStartKwh = parseNum(meterStartRaw);
+          const meterEndKwh = parseNum(meterEndRaw);
+          const meterStartExact = isFinite(meterStartKwh) && decimalPlaces(meterStartRaw) >= 3;
+          const meterEndExact = isFinite(meterEndKwh) && decimalPlaces(meterEndRaw) >= 3;
+          const meterStartWh = meterStartExact ? Math.round(meterStartKwh * 1000) : null;
+          const meterEndWh = meterEndExact ? Math.round(meterEndKwh * 1000) : null;
           const sessionKey = serial && meterEndWh !== null ? `goe:${serial}:${meterEndWh}` : null;
 
           // Bereits bekannte Session → nicht neu anlegen, sondern fehlende
