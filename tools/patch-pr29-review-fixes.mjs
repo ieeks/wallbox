@@ -75,3 +75,4 @@ replaceOnce(`    sessionKey: 'Zähler-ID', goeSessionId: 'Session-ID', meterStar
 
 fs.writeFileSync(path, src);
 console.log('script.js: PR #29 review fixes applied.');
+// one-shot trigger
