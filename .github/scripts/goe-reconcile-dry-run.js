@@ -8,6 +8,11 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { applyPlanToCharges, buildReconciliationPlan, parseDataV3Csv } from '../../src/goe-reconciliation.js';
+import {
+  assertLegacyMappingStructurallyConsistent,
+  legacyApprovalRows,
+  matchMethodCounts,
+} from '../../src/goe-reconciliation-apply.js';
 
 const serial = process.env.GOE_SERIAL;
 const token = process.env.GOE_TOKEN;
@@ -134,8 +139,19 @@ async function main() {
   const projectedKwhTotal = sumKwh(projectedCharges.map(c => c.kwh));
   const currentFingerprint = sha256(canonical(charges));
   const sourceFingerprint = sha256(csv);
+  const planHash = sha256(canonical({ currentFingerprint, sourceFingerprint, plan }));
+  const matchMethods = matchMethodCounts(plan);
+
+  if ((matchMethods.legacy || 0) > 0) {
+    assertLegacyMappingStructurallyConsistent(charges, sessions, plan);
+  }
+
+  const legacyRows = legacyApprovalRows(plan, charges, sessions);
+  const legacyRowHashes = legacyRows.map(row => row.rowHash);
+  const legacyApprovalRoot = legacyRows.length ? sha256(canonical(legacyRowHashes)) : null;
+
   const planPayload = {
-    schemaVersion: 1,
+    schemaVersion: 3,
     mode: 'dry-run',
     createdAt,
     currentFingerprint,
@@ -144,9 +160,12 @@ async function main() {
     sourceSessions: sessions,
     plan,
     totals: { sourceKwhTotal, meterSpanKwhTotal, currentKwhTotal, projectedKwhTotal },
+    planHash,
+    legacyApprovalRoot,
+    legacyApprovalRows: legacyRows,
+    legacyRowHashes,
+    matchMethods,
   };
-  const planHash = sha256(canonical({ currentFingerprint, sourceFingerprint, plan }));
-  planPayload.planHash = planHash;
 
   const backup = {
     schemaVersion: 1,
@@ -161,9 +180,16 @@ async function main() {
   await fs.writeFile(path.join(outDir, 'firestore-backup.enc.json'), JSON.stringify(encryptJson(backup)));
   await fs.writeFile(path.join(outDir, 'reconciliation-plan.enc.json'), JSON.stringify(encryptJson(planPayload)));
   await fs.writeFile(path.join(outDir, 'summary.json'), JSON.stringify({
-    schemaVersion: 1,
+    schemaVersion: 3,
     createdAt,
-    planHash: planHash.slice(0, 16),
+    planHash,
+    currentFingerprint,
+    sourceFingerprint,
+    legacyApprovalRoot,
+    legacyReviewRows: legacyRows.length,
+    legacyRowHashes,
+    matchMethods,
+    structuralLegacyGate: (matchMethods.legacy || 0) > 0 ? 'passed' : 'not-needed',
     ...plan.summary,
     sourceKwhTotal,
     meterSpanKwhTotal,
@@ -187,7 +213,10 @@ async function main() {
   console.log(`currentKwhTotal=${currentKwhTotal.toFixed(3)}`);
   console.log(`projectedKwhTotal=${projectedKwhTotal.toFixed(3)}`);
   console.log(`tripBackupDocuments=${trips.length}`);
-  console.log(`planHash=${planHash.slice(0, 16)}`);
+  console.log(`matchMethods=${JSON.stringify(matchMethods)}`);
+  console.log(`structuralLegacyGate=${(matchMethods.legacy || 0) > 0 ? 'passed' : 'not-needed'}`);
+  console.log(`planHash=${planHash}`);
+  console.log(`legacyApprovalRoot=${legacyApprovalRoot || 'none'}`);
   console.log('Keine Firestore-Daten wurden verändert. Detailplan und Backup liegen ausschließlich verschlüsselt im Artefakt.');
 
   if (s.sourceInconsistencies > 0) {
