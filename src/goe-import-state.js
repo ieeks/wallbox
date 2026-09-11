@@ -57,11 +57,11 @@ export function advanceImportState(previous, observation) {
   let completed = null;
 
   if (car === 2) {
-    // Neue beobachtete Ladephase: nur ein zuvor im Idle gemessener Zählerstand
-    // ist eine vertrauenswürdige Baseline. Bei Deployment mitten in der Ladung
-    // bleibt sessionStartEto bewusst null → wh-Fallback beim Abschluss.
+    // Neue beobachtete Ladephase: der letzte echte Idle-Zählerstand bleibt auch
+    // über Zwischenzustände 3/4 hinweg die vertrauenswürdige Baseline. Bei
+    // Deployment mitten in der Ladung ist idleEto null → wh-Fallback bleibt.
     if (!sessionSeenCharging) {
-      sessionStartEto = prev.lastCar === 1 && Number.isSafeInteger(idleEto) ? idleEto : null;
+      sessionStartEto = Number.isSafeInteger(idleEto) ? idleEto : null;
       sessionSeenCharging = true;
     }
   } else if (car === 1) {
