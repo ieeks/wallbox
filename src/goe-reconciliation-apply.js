@@ -10,16 +10,58 @@ export function canonical(value) {
 
 export const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
 
-export function legacyApprovalRows(plan) {
+function chargeTimestampMs(charge) {
+  if (!charge?.date) return NaN;
+  const raw = String(charge.time || '12:00').slice(0, 8);
+  const time = raw.length === 5 ? `${raw}:00` : raw;
+  return Date.parse(`${charge.date}T${time}`);
+}
+
+function meterEndFromSessionKey(sessionKey) {
+  const parts = String(sessionKey || '').split(':');
+  const value = Number(parts[2]);
+  return Number.isSafeInteger(value) ? value : null;
+}
+
+function mapsForReview(charges = [], sessions = []) {
+  return {
+    chargeById: new Map(charges.map(c => [c.id, c])),
+    sessionById: new Map(sessions.map(s => [s.goeSessionId, s])),
+  };
+}
+
+export function legacyApprovalRows(plan, charges = [], sessions = []) {
+  const { chargeById, sessionById } = mapsForReview(charges, sessions);
   return (plan?.matches || [])
     .filter(m => m.matchMethod === 'legacy')
-    .map(m => ({
-      chargeId: m.chargeId,
-      sessionKey: m.sessionKey,
-      goeSessionId: m.goeSessionId,
-    }))
-    .sort((a, b) => String(a.chargeId).localeCompare(String(b.chargeId)))
-    .map(row => ({ ...row, rowHash: sha256(canonical(row)) }));
+    .map(m => {
+      const identity = {
+        chargeId: m.chargeId,
+        sessionKey: m.sessionKey,
+        goeSessionId: m.goeSessionId,
+      };
+      const charge = chargeById.get(m.chargeId);
+      const session = sessionById.get(m.goeSessionId);
+      return {
+        ...identity,
+        // IMPORTANT: review is display-only. The approval hash intentionally
+        // covers only the identity triplet so wording/display changes do not
+        // invalidate a previously reviewed mapping.
+        rowHash: sha256(canonical(identity)),
+        review: charge || session ? {
+          chargeDate: charge?.date || null,
+          chargeTime: charge?.time || null,
+          chargeKwh: Number.isFinite(Number(charge?.kwh)) ? Number(charge.kwh) : null,
+          sourceStart: session?.start ? `${session.start.date} ${session.start.time}` : null,
+          sourceEnd: session?.end ? `${session.end.date} ${session.end.time}` : null,
+          sourceKwh: Number.isFinite(Number(session?.energyKwh)) ? Number(session.energyKwh) : null,
+          mismatchKwh: m.mismatchKwh ?? null,
+          meterStartWh: session?.meterStartWh ?? null,
+          meterEndWh: session?.meterEndWh ?? null,
+        } : null,
+      };
+    })
+    .sort((a, b) => String(a.chargeId).localeCompare(String(b.chargeId)));
 }
 
 export function matchMethodCounts(plan) {
@@ -57,6 +99,85 @@ export function assertReconciliationGates(plan, totals) {
   if (Number(totals?.projectedKwhTotal).toFixed(3) !== Number(totals?.sourceKwhTotal).toFixed(3)) {
     throw new Error(`Gate: projected ${Number(totals?.projectedKwhTotal).toFixed(3)} != source ${Number(totals?.sourceKwhTotal).toFixed(3)}`);
   }
+}
+
+function mappedPairs(charges, sessions, plan) {
+  const { chargeById, sessionById } = mapsForReview(charges, sessions);
+  return (plan?.matches || []).map(match => {
+    const charge = chargeById.get(match.chargeId);
+    const session = sessionById.get(match.goeSessionId);
+    if (!charge || !session) throw new Error(`Gate: Mapping-Daten fehlen für ${match.chargeId}/${match.goeSessionId}`);
+    const chargeMs = chargeTimestampMs(charge);
+    if (!Number.isFinite(chargeMs)) throw new Error(`Gate: ungültiger Bestands-Zeitstempel für ${match.chargeId}`);
+    if (!Number.isSafeInteger(session.meterStartWh) || !Number.isSafeInteger(session.meterEndWh)) {
+      throw new Error(`Gate: ungültige Quell-Zählerwerte für ${match.goeSessionId}`);
+    }
+    const keyMeterEnd = meterEndFromSessionKey(match.sessionKey);
+    if (keyMeterEnd !== session.meterEndWh) {
+      throw new Error(`Gate: sessionKey/Zählerende widersprechen sich für ${match.goeSessionId}`);
+    }
+    return { match, charge, session, chargeMs };
+  });
+}
+
+export function assertMeterOrderConsistent(charges, sessions, plan) {
+  const pairs = mappedPairs(charges, sessions, plan);
+  const byChargeTime = pairs.slice()
+    .sort((a, b) => a.chargeMs - b.chargeMs || String(a.charge.id).localeCompare(String(b.charge.id)))
+    .map(x => x.session.goeSessionId);
+  const byMeter = pairs.slice()
+    .sort((a, b) => a.session.meterEndWh - b.session.meterEndWh)
+    .map(x => x.session.goeSessionId);
+  const inversions = byChargeTime.reduce((count, id, i) => count + (id === byMeter[i] ? 0 : 1), 0);
+  if (inversions) {
+    throw new Error(`Gate: Zähler- und Zeitordnung widersprechen sich (${inversions} Inversionen)`);
+  }
+}
+
+export function assertMeterChainConsistent(charges, sessions, plan) {
+  const pairs = mappedPairs(charges, sessions, plan)
+    .sort((a, b) => a.chargeMs - b.chargeMs || String(a.charge.id).localeCompare(String(b.charge.id)));
+  const source = pairs.slice().sort((a, b) => a.session.meterEndWh - b.session.meterEndWh);
+
+  // Compare the actual source gap pattern instead of requiring a gap-free chain.
+  // The historical export legitimately contains a 39 Wh gap during commissioning.
+  const signature = list => list.map((x, i) => ({
+    id: x.session.goeSessionId,
+    gapWh: i === 0 ? null : x.session.meterStartWh - list[i - 1].session.meterEndWh,
+  }));
+  if (canonical(signature(pairs)) !== canonical(signature(source))) {
+    throw new Error('Gate: zugeordnete Zählerkette entspricht nicht der Quell-Zählerkette');
+  }
+}
+
+export function assertLegacyMismatchProfile(charges, sessions, plan, {
+  ordinaryRelativeLimit = 0.015,
+  maxOutliers = 1,
+  largeOutlierMinRelative = 0.20,
+} = {}) {
+  const pairs = mappedPairs(charges, sessions, plan).filter(x => x.match.matchMethod === 'legacy');
+  const outliers = [];
+  for (const { charge, session, match } of pairs) {
+    const oldKwh = Number(charge.kwh);
+    const sourceKwh = Number(session.energyKwh);
+    if (!Number.isFinite(oldKwh) || !Number.isFinite(sourceKwh) || sourceKwh <= 0) {
+      throw new Error(`Gate: ungültige Energie für Legacy-Match ${match.chargeId}`);
+    }
+    const relative = Math.abs(oldKwh - sourceKwh) / sourceKwh;
+    if (relative > ordinaryRelativeLimit) outliers.push({ chargeId: match.chargeId, relative });
+  }
+  if (outliers.length > maxOutliers) {
+    throw new Error(`Gate: ${outliers.length} Legacy-Energieausreißer > ${(ordinaryRelativeLimit * 100).toFixed(1)}%`);
+  }
+  if (outliers.length === 1 && outliers[0].relative < largeOutlierMinRelative) {
+    throw new Error(`Gate: unerwarteter mittlerer Legacy-Ausreißer ${(outliers[0].relative * 100).toFixed(2)}%`);
+  }
+}
+
+export function assertLegacyMappingStructurallyConsistent(charges, sessions, plan) {
+  assertMeterOrderConsistent(charges, sessions, plan);
+  assertMeterChainConsistent(charges, sessions, plan);
+  assertLegacyMismatchProfile(charges, sessions, plan);
 }
 
 export function assertIdentityBackfillReady(plan, approvedLegacyRoot, actualLegacyRoot) {
