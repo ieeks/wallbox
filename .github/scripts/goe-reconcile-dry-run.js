@@ -9,7 +9,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { applyPlanToCharges, buildReconciliationPlan, parseDataV3Csv } from '../../src/goe-reconciliation.js';
 import {
-  assertLegacyMappingStructurallyConsistent,
+  assertLegacyMismatchProfile,
+  assertMeterChainConsistent,
+  assertMeterOrderConsistent,
   legacyApprovalRows,
   matchMethodCounts,
 } from '../../src/goe-reconciliation-apply.js';
@@ -141,10 +143,19 @@ async function main() {
   const sourceFingerprint = sha256(csv);
   const planHash = sha256(canonical({ currentFingerprint, sourceFingerprint, plan }));
   const matchMethods = matchMethodCounts(plan);
+  const hasLegacy = (matchMethods.legacy || 0) > 0;
 
-  if ((matchMethods.legacy || 0) > 0) {
-    assertLegacyMappingStructurallyConsistent(charges, sessions, plan);
-  }
+  // These two checks are relevant for every mapping, not only legacy matches.
+  // Keep them unconditional so a Phase-2 approval dry-run exposes the same
+  // structural assurances that the write-capable apply path enforces.
+  assertMeterOrderConsistent(charges, sessions, plan);
+  assertMeterChainConsistent(charges, sessions, plan);
+  if (hasLegacy) assertLegacyMismatchProfile(charges, sessions, plan);
+
+  const meterOrderGate = 'passed';
+  const meterChainGate = 'passed';
+  const legacyMismatchProfileGate = hasLegacy ? 'passed' : 'not-needed';
+  const structuralLegacyGate = hasLegacy ? 'passed' : 'not-needed';
 
   const legacyRows = legacyApprovalRows(plan, charges, sessions);
   const legacyRowHashes = legacyRows.map(row => row.rowHash);
@@ -160,6 +171,7 @@ async function main() {
     sourceSessions: sessions,
     plan,
     totals: { sourceKwhTotal, meterSpanKwhTotal, currentKwhTotal, projectedKwhTotal },
+    gates: { meterOrderGate, meterChainGate, legacyMismatchProfileGate, structuralLegacyGate },
     planHash,
     legacyApprovalRoot,
     legacyApprovalRows: legacyRows,
@@ -189,7 +201,10 @@ async function main() {
     legacyReviewRows: legacyRows.length,
     legacyRowHashes,
     matchMethods,
-    structuralLegacyGate: (matchMethods.legacy || 0) > 0 ? 'passed' : 'not-needed',
+    meterOrderGate,
+    meterChainGate,
+    legacyMismatchProfileGate,
+    structuralLegacyGate,
     ...plan.summary,
     sourceKwhTotal,
     meterSpanKwhTotal,
@@ -214,7 +229,10 @@ async function main() {
   console.log(`projectedKwhTotal=${projectedKwhTotal.toFixed(3)}`);
   console.log(`tripBackupDocuments=${trips.length}`);
   console.log(`matchMethods=${JSON.stringify(matchMethods)}`);
-  console.log(`structuralLegacyGate=${(matchMethods.legacy || 0) > 0 ? 'passed' : 'not-needed'}`);
+  console.log(`meterOrderGate=${meterOrderGate}`);
+  console.log(`meterChainGate=${meterChainGate}`);
+  console.log(`legacyMismatchProfileGate=${legacyMismatchProfileGate}`);
+  console.log(`structuralLegacyGate=${structuralLegacyGate}`);
   console.log(`planHash=${planHash}`);
   console.log(`legacyApprovalRoot=${legacyApprovalRoot || 'none'}`);
   console.log('Keine Firestore-Daten wurden verändert. Detailplan und Backup liegen ausschließlich verschlüsselt im Artefakt.');
