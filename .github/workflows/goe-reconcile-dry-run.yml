@@ -1,0 +1,44 @@
+name: go-e Reconciliation Dry Run
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install test dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Install Firestore dependency
+        run: npm install firebase-admin
+        working-directory: .github/scripts
+
+      - name: Build encrypted backup and reconciliation plan
+        env:
+          GOE_SERIAL: ${{ secrets.GOE_SERIAL }}
+          GOE_TOKEN: ${{ secrets.GOE_TOKEN }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          RECON_BACKUP_KEY: ${{ secrets.RECON_BACKUP_KEY }}
+        run: node .github/scripts/goe-reconcile-dry-run.js
+
+      - name: Upload encrypted reconciliation bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: goe-reconciliation-dry-run
+          path: reconciliation-output/
+          if-no-files-found: error
+          retention-days: 7
