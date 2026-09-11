@@ -16,7 +16,11 @@
   }
 
   function sameSession(a, b) {
+    // Der geeichte Zähler-Endstand ist die stärkste Identität. Sind auf beiden
+    // Seiten sessionKeys vorhanden, entscheidet ausschließlich dieser Vergleich.
     if (a.sessionKey && b.sessionKey) return a.sessionKey === b.sessionKey;
+    // Der Export-Identifier ist die zweite stabile Ebene für CSV-/Legacy-Daten.
+    if (a.goeSessionId && b.goeSessionId) return a.goeSessionId === b.goeSessionId;
     // Legacy-lch ist boot-relativ, nicht global eindeutig. Nie allein vergleichen.
     // Ursprünglichen lokalen Zeitpunkt auf beiden Seiten nutzen, auch nach manuellen Änderungen.
     const legacyTime = c => Date.parse(`${c.sessionDate || c.date}T${c.sessionTime || c.time || ''}:00Z`);
@@ -26,7 +30,7 @@
 
   function deletionMarker(c) {
     const marker = { id: c.id };
-    for (const key of ['lch', 'sessionKey', 'sessionDate', 'sessionTime', 'date', 'time']) {
+    for (const key of ['lch', 'sessionKey', 'goeSessionId', 'sessionDate', 'sessionTime', 'date', 'time']) {
       if (c[key] != null) marker[key] = c[key];
     }
     return marker;
@@ -95,9 +99,10 @@
     const current = apply(cloud, markers);
     const match = current.charges.find(c => sameSession(c, entry));
     if (match) {
-      // ID und manuelle Änderungen behalten; nur die stabile Import-Kennung ergänzen.
+      // ID und manuelle Änderungen behalten; nur stabile Import-Kennungen ergänzen.
       Object.assign(match, {
         sessionKey: entry.sessionKey || match.sessionKey || null,
+        goeSessionId: entry.goeSessionId || match.goeSessionId || null,
         sessionDate: match.sessionDate || entry.sessionDate,
         sessionTime: match.sessionTime || entry.sessionTime,
       });
@@ -108,6 +113,7 @@
     if (deletedMatch) {
       // Auch Legacy-Löschmarker ergänzen, damit ein späterer Reboot keinen Reimport auslöst.
       if (entry.sessionKey) deletedMatch.sessionKey = entry.sessionKey;
+      if (entry.goeSessionId) deletedMatch.goeSessionId = entry.goeSessionId;
       return { ...current, imported: false,
         changed: !equal(current.charges, cloud.charges || []) || !equal(current.deleted, markers) };
     }
