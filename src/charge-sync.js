@@ -99,13 +99,13 @@
     const current = apply(cloud, markers);
     const match = current.charges.find(c => sameSession(c, entry));
     if (match) {
-      // ID und manuelle Änderungen behalten; nur stabile Import-Kennungen ergänzen.
-      Object.assign(match, {
-        sessionKey: entry.sessionKey || match.sessionKey || null,
-        goeSessionId: entry.goeSessionId || match.goeSessionId || null,
-        sessionDate: match.sessionDate || entry.sessionDate,
-        sessionTime: match.sessionTime || entry.sessionTime,
-      });
+      // ID und manuelle Änderungen behalten; nur tatsächlich vorhandene stabile
+      // Import-Kennungen ergänzen. Fehlende optionale Felder nicht als null
+      // materialisieren – sonst würde jeder bekannte Idle-Poll erneut schreiben.
+      if (entry.sessionKey && !match.sessionKey) match.sessionKey = entry.sessionKey;
+      if (entry.goeSessionId && !match.goeSessionId) match.goeSessionId = entry.goeSessionId;
+      if (!match.sessionDate && entry.sessionDate) match.sessionDate = entry.sessionDate;
+      if (!match.sessionTime && entry.sessionTime) match.sessionTime = entry.sessionTime;
       return { ...current, imported: false,
         changed: !equal(current.charges, cloud.charges || []) || !equal(current.deleted, markers) };
     }
