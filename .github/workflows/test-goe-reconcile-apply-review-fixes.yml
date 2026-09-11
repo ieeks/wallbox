@@ -1,0 +1,62 @@
+name: Validate reconciliation review fixes
+
+on:
+  push:
+    branches:
+      - feat/goe-reconciliation-apply
+    paths:
+      - tools/trigger-apply-review-validation.txt
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: feat/goe-reconciliation-apply
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: node --check .github/scripts/goe-reconcile-dry-run.js
+      - run: node --check .github/scripts/goe-reconcile-apply.js
+      - name: Install Firestore dependency
+        run: npm install firebase-admin
+        working-directory: .github/scripts
+      - name: Prepare real read-only plan with structural gates
+        env:
+          GOE_SERIAL: ${{ secrets.GOE_SERIAL }}
+          GOE_TOKEN: ${{ secrets.GOE_TOKEN }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          RECON_BACKUP_KEY: ${{ secrets.RECON_BACKUP_KEY }}
+        run: node .github/scripts/goe-reconcile-dry-run.js
+      - name: Validate identity-backfill without writes
+        env:
+          GOE_SERIAL: ${{ secrets.GOE_SERIAL }}
+          GOE_TOKEN: ${{ secrets.GOE_TOKEN }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          RECON_PHASE: identity-backfill
+          RECON_VALIDATE_ONLY: '1'
+        run: node .github/scripts/goe-reconcile-apply.js
+      - name: Verify final apply remains blocked while legacy matches remain
+        env:
+          GOE_SERIAL: ${{ secrets.GOE_SERIAL }}
+          GOE_TOKEN: ${{ secrets.GOE_TOKEN }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          RECON_PHASE: apply
+          RECON_VALIDATE_ONLY: '1'
+        run: |
+          set +e
+          node .github/scripts/goe-reconcile-apply.js
+          rc=$?
+          set -e
+          if [ "$rc" -eq 0 ]; then
+            echo '::error::Final apply unexpectedly passed with legacy matches'
+            exit 1
+          fi
+          echo 'Final apply correctly blocked while legacy matches remain.'
