@@ -33,3 +33,30 @@ jobs:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           RECON_BACKUP_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
         run: node .github/scripts/goe-reconcile-dry-run.js
+      - name: Compare data.v3 energy and meter totals
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import crypto from 'node:crypto';
+          const envelope = JSON.parse(fs.readFileSync('reconciliation-output/reconciliation-plan.enc.json', 'utf8'));
+          const keyBytes = Buffer.from('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=', 'base64');
+          const key = crypto.createHash('sha256')
+            .update('ladefuchs-goe-reconciliation-backup-v1\0')
+            .update(keyBytes)
+            .digest();
+          const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(envelope.iv, 'base64'));
+          decipher.setAuthTag(Buffer.from(envelope.tag, 'base64'));
+          const plain = Buffer.concat([
+            decipher.update(Buffer.from(envelope.ciphertext, 'base64')),
+            decipher.final(),
+          ]).toString('utf8');
+          const payload = JSON.parse(plain);
+          const sum = (arr) => arr.reduce((a, b) => a + b, 0);
+          const energy = sum(payload.sourceSessions.map(s => s.energyKwh));
+          const meter = sum(payload.sourceSessions.map(s => s.meterKwh));
+          const nonZero = payload.sourceSessions.filter(s => Math.abs(s.sourceDeltaKwh) > 0.0001);
+          console.log(`exportedEnergyKwhTotal=${energy.toFixed(3)}`);
+          console.log(`meterSpanKwhTotal=${meter.toFixed(3)}`);
+          console.log(`nonZeroSourceDeltaSessions=${nonZero.length}`);
+          console.log(`sourceDeltaKwhTotal=${sum(payload.sourceSessions.map(s => s.sourceDeltaKwh)).toFixed(3)}`);
+          NODE
