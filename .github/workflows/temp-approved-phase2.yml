@@ -1,0 +1,156 @@
+name: Temporary approved Phase 2 execution
+
+on:
+  push:
+    branches:
+      - fix/reconciliation-dry-run-structure-gates
+    paths:
+      - tools/trigger-approved-phase2.txt
+
+permissions:
+  contents: read
+
+concurrency:
+  group: goe-reconciliation-apply
+  cancel-in-progress: false
+
+jobs:
+  phase2:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install test dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Install Firestore dependency
+        run: npm install firebase-admin
+        working-directory: .github/scripts
+
+      - name: Prepare fresh encrypted pre-write backup and plan
+        env:
+          GOE_SERIAL: ${{ secrets.GOE_SERIAL }}
+          GOE_TOKEN: ${{ secrets.GOE_TOKEN }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          RECON_BACKUP_KEY: ${{ secrets.RECON_BACKUP_KEY }}
+        run: node .github/scripts/goe-reconcile-dry-run.js
+
+      - name: Upload encrypted pre-write backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: goe-reconciliation-phase2-pre-write-${{ github.run_id }}
+          path: reconciliation-output/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Capture invariant charge fields before write
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          node --input-type=module <<'NODE'
+          import admin from 'firebase-admin';
+          import crypto from 'node:crypto';
+          import fs from 'node:fs/promises';
+          const sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+          admin.initializeApp({ credential: admin.credential.cert(sa), projectId: sa.project_id });
+          const snap = await admin.firestore().collection('haushalte').doc('haushalt').get();
+          const charges = Array.isArray(snap.data()?.charges) ? snap.data().charges : [];
+          const plain = value => {
+            if (value === null || value === undefined) return value ?? null;
+            if (typeof value !== 'object') return value;
+            if (typeof value.toDate === 'function') return value.toDate().toISOString();
+            if (Array.isArray(value)) return value.map(plain);
+            return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, plain(v)]));
+          };
+          const canonical = value => {
+            if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+            if (value && typeof value === 'object') return `{${Object.keys(value).sort().map(k => `${JSON.stringify(k)}:${canonical(value[k])}`).join(',')}}`;
+            return JSON.stringify(value);
+          };
+          const invariants = charges.map(c => ({
+            id: c.id,
+            date: plain(c.date),
+            time: plain(c.time),
+            snap: plain(c.snap),
+            energyPrice: plain(c.energyPrice),
+          })).sort((a, b) => String(a.id).localeCompare(String(b.id)));
+          const hash = crypto.createHash('sha256').update(canonical(invariants)).digest('hex');
+          await fs.writeFile('/tmp/recon-phase2-invariants.sha256', hash);
+          console.log(`invariantFieldsBeforeHash=${hash}`);
+          NODE
+
+      - name: Apply approved reconciliation only
+        env:
+          GOE_SERIAL: ${{ secrets.GOE_SERIAL }}
+          GOE_TOKEN: ${{ secrets.GOE_TOKEN }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          RECON_PHASE: apply
+          APPROVED_PLAN_HASH: 1846291d26af2be22cced4fba62e04c8776f5a4c4ce51bcddafba35394762f85
+          RECON_CONFIRM: APPLY_RECONCILIATION
+        run: node .github/scripts/goe-reconcile-apply.js
+
+      - name: Verify date time snap energyPrice unchanged
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          node --input-type=module <<'NODE'
+          import admin from 'firebase-admin';
+          import crypto from 'node:crypto';
+          import fs from 'node:fs/promises';
+          const sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+          admin.initializeApp({ credential: admin.credential.cert(sa), projectId: sa.project_id });
+          const snap = await admin.firestore().collection('haushalte').doc('haushalt').get();
+          const charges = Array.isArray(snap.data()?.charges) ? snap.data().charges : [];
+          const plain = value => {
+            if (value === null || value === undefined) return value ?? null;
+            if (typeof value !== 'object') return value;
+            if (typeof value.toDate === 'function') return value.toDate().toISOString();
+            if (Array.isArray(value)) return value.map(plain);
+            return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, plain(v)]));
+          };
+          const canonical = value => {
+            if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+            if (value && typeof value === 'object') return `{${Object.keys(value).sort().map(k => `${JSON.stringify(k)}:${canonical(value[k])}`).join(',')}}`;
+            return JSON.stringify(value);
+          };
+          const invariants = charges.map(c => ({
+            id: c.id,
+            date: plain(c.date),
+            time: plain(c.time),
+            snap: plain(c.snap),
+            energyPrice: plain(c.energyPrice),
+          })).sort((a, b) => String(a.id).localeCompare(String(b.id)));
+          const after = crypto.createHash('sha256').update(canonical(invariants)).digest('hex');
+          const before = (await fs.readFile('/tmp/recon-phase2-invariants.sha256', 'utf8')).trim();
+          console.log(`invariantFieldsAfterHash=${after}`);
+          if (after !== before) throw new Error('date/time/snap/energyPrice haben sich durch Phase 2 verändert');
+          console.log('invariantFields=date,time,snap,energyPrice unchanged');
+          NODE
+
+      - name: Fresh post-apply read-only dry run
+        env:
+          GOE_SERIAL: ${{ secrets.GOE_SERIAL }}
+          GOE_TOKEN: ${{ secrets.GOE_TOKEN }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          RECON_BACKUP_KEY: ${{ secrets.RECON_BACKUP_KEY }}
+        run: |
+          rm -rf reconciliation-output
+          node .github/scripts/goe-reconcile-dry-run.js
+
+      - name: Upload encrypted post-apply dry run
+        uses: actions/upload-artifact@v4
+        with:
+          name: goe-reconciliation-phase2-post-write-${{ github.run_id }}
+          path: reconciliation-output/
+          if-no-files-found: error
+          retention-days: 7
