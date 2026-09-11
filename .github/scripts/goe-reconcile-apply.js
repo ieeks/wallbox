@@ -101,21 +101,6 @@ async function loadPreparedSummary() {
   return summary;
 }
 
-function requireApproval(summary, hashes) {
-  const approvedPlanHash = validateOnly ? summary.planHash : approvedPlanHashInput;
-  if (!/^[a-f0-9]{64}$/i.test(approvedPlanHash)) throw new Error('approved_plan_hash muss ein vollständiger SHA-256 Hash sein');
-  if (approvedPlanHash !== summary.planHash || approvedPlanHash !== hashes.planHash) {
-    throw new Error('planHash entspricht nicht dem freigegebenen und frisch vorbereiteten Dry-Run');
-  }
-
-  if (phase === 'identity-backfill') {
-    const approvedLegacyRoot = validateOnly ? summary.legacyApprovalRoot : approvedLegacyRootInput;
-    assertIdentityBackfillReady({ matches: [], summary: {} }, '0'.repeat(64), '0'.repeat(64)); // schema path exercised below with real plan
-    return { approvedPlanHash, approvedLegacyRoot };
-  }
-  return { approvedPlanHash, approvedLegacyRoot: null };
-}
-
 async function main() {
   const prepared = await loadPreparedSummary();
   const at = new Date().toISOString();
