@@ -1,0 +1,27 @@
+name: go-e DLL export diagnostic v2
+
+on:
+  push:
+    branches:
+      - diag/goe-dll-export
+    paths:
+      - tools/run-dll-diagnostic-v2.txt
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: diag/goe-dll-export
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+      - name: Inspect export portal direct-link structure
+        env:
+          GOE_SERIAL: ${{ secrets.GOE_SERIAL }}
+          GOE_TOKEN: ${{ secrets.GOE_TOKEN }}
+        run: node .github/scripts/goe-dll-diagnostic.js
