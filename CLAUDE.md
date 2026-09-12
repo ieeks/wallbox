@@ -18,13 +18,13 @@ sehen Nutzer nach einem Deploy noch die alte Version.
 
 ---
 
-## Aktuelle Version: 1.16.3
+## Aktuelle Version: 1.17.0
 
 ---
 
 ## GitHub Action: go-e Auto-Import
 
-**Dateien:** `.github/workflows/goe-import.yml`, `.github/scripts/goe-import.js`
+**Dateien:** `.github/workflows/goe-import.yml`, `.github/scripts/goe-import-v2.js`, `src/goe-import-state.js`
 
 **Trigger:** Alle 15 min (cron) + manuell (workflow_dispatch)
 
@@ -38,12 +38,16 @@ sendet gerade nichts). 403/404 sind Betriebszustände, keine Defekte, und beende
 Defekt fällt nicht mehr auf. Sichtbar bleiben sie über eine `::warning::`-Annotation,
 denn 403 heisst eben auch „Cloud-API in der App abgedreht" – ein Zustand, der von allein
 nie wieder weggeht. 5xx und Netzwerkfehler werden 3× mit 5s/10s-Backoff wiederholt und
-erst dann rot. Kein Datenverlust dabei: die Session steht bis zur nächsten in `wh`/`lch`,
-und der Zeitstempel aus `now - (rbt - lccfc)` stimmt auch Stunden später noch. Was fehlt,
+erst dann rot. Kein Datenverlust dabei: wenn eine belastbare Idle-Baseline beobachtet wurde,
+wird die Session-Energie beim nächsten erfolgreichen Poll aus dem `eto`-Zählerdelta rekonstruiert;
+fehlt diese Baseline (z.B. Deployment mitten in der Ladung), bleibt `wh` nur als Fallback.
+Der Zeitstempel aus `now - (rbt - lccfc)` stimmt auch Stunden später noch. Was fehlt,
 ist der Peak – `nrg[11]` wird nur bei `car === 2` abgetastet.
 
-**Erkennungslogik (ab v1.16.2):**
-- `car === 1` + mindestens 10 Wh + gültiger Session-Endzeitpunkt.
+**Erkennungslogik (ab v1.17.0):**
+- `car === 1` + gültiger Session-Endzeitpunkt + importierbare Energiemenge.
+- Energiequelle primär: `eto`-Delta zwischen belastbarer Idle-Baseline und Session-Ende (`energySource = 'eto-delta'`).
+- `wh` ist nur Fallback, wenn keine vertrauenswürdige `eto`-Baseline existiert (z.B. Deployment mitten in einer Ladung).
 - `sessionKey = goe:<serial>:<eto>` verwendet den Gesamtzählerstand in Wh,
   damit wiederholte Polls und Reboots dieselbe Session nicht erneut anlegen.
 - Altdaten ohne diesen Schlüssel werden konservativ über `lch` UND die Nähe
@@ -80,9 +84,11 @@ und auch vom Node-Importer genutzt. Kein Framework/Build erforderlich.
 **Charge-Felder:**
 - `lch` = Session-ID (Sekunden seit Reboot)
 - `dauer` = aktive Ladezeit aus `cdi` (ms → H:MM:SS)
-- `dauerGesamt` = null (nicht über API verfügbar)
+- `dauerGesamt` = `null` im laufenden Cloud-API-Auto-Import; der data.v3-Export liefert den Wert. Die 23 reconcilierten Bestandseinträge wurden damit rückwirkend ergänzt.
 - `source` = `'go-e-auto'`
-- `maxKw` aus dem **Peak-Tracker**, nicht aus `nrg[11]` zum Importzeitpunkt
+- `energySource` = bevorzugt `'eto-delta'`, nur bei fehlender belastbarer Baseline `'wh-fallback'`
+- `meterStartWh` / `meterEndWh` dokumentieren die verwendete `eto`-Spanne, soweit verfügbar
+- `maxKw` aus dem **Peak-Tracker** beim laufenden Auto-Import; historische Bestandseinträge wurden aus dem data.v3-Export auf den Completed-Session-Peak reconciliert
 
 **Peak-Tracker (`maxKw`):** `nrg[11]` ist die *momentane* Leistung. Der Import läuft aber
 erst bei `car === 1` (abgesteckt) – dort fliesst nichts mehr und der Wert ist immer 0.
@@ -92,17 +98,22 @@ gehalten; beim Import wird es gelesen und erst mit der erfolgreichen Transaktion
 - State liegt in **eigenem Dokument** `haushalte/goe-peak-tracker`. Nicht als Feld in
   `haushalte/haushalt`: alte Browser-Versionen überschreiben das Haushaltsdokument vollständig;
   die neue Version schreibt transaktional mit `{merge:true}`.
-- Session-Reset erkannt über `wh` (fällt = neue Session) und `rbt` (fällt = Reboot).
+- Session-Reset **des Peak-Trackers** erkannt über `wh` (fällt = neue Session) und `rbt` (fällt = Reboot). `wh` ist hier nur Reset-Signal, nicht die primäre Energiequelle; die Import-Energie kommt bevorzugt aus dem `eto`-Delta.
 - `consumePeak()` liest vor dem Import. Schreibfehler lassen den Peak für den Retry erhalten;
   eine Idle-Session unter 10 Wh leert ihn ausdrücklich.
-- Ohne Tracking-Daten bleibt `maxKw` **`null`** – kein Fallback auf `nrg[11]`, denn 0 ist
-  kein Maximum. Die 15 Einträge vor v1.10.3 haben deshalb `maxKw: 0` (nicht rückwirkend
-  reparierbar, die API liefert keine Historie).
+- Ohne Live-Tracking-Daten bleibt `maxKw` bei einer neuen API-only-Session **`null`** – kein Fallback auf `nrg[11]`, denn 0 ist kein Maximum.
+- Der historische Altbestand ist inzwischen repariert: der data.v3-Export liefert Completed-Session-Peaks; die früheren `maxKw: 0`-Einträge wurden rückwirkend reconciliert.
 - Es ist ein **abgetastetes** Maximum (15-min-Raster): eine kurze Spitze zwischen zwei
   Läufen wird nicht gesehen. Für „hängt die Wallbox dauerhaft nahe 11 kW?" reicht das,
   weil die Ladeleistung über weite Teile der Session konstant ist.
 - Relevanz: ab 1.1.2027 bestimmt das höchste 15-min-Mittel des Monats den Leistungspreis
   auf Netzebene 7 (SNE-G-V). `maxKw` ist die Datenbasis dafür.
+
+**Historischer Bestand nach Reconciliation (11.09.2026):**
+- 23/23 go-e-Sessions sind stabil über `sessionKey` / `goeSessionId` zugeordnet; kein Legacy-Matching mehr.
+- Autoritative Energiequelle für den Bestand ist `Energie [kWh]` aus data.v3; aktuelle Summe: **1.174,499 kWh**.
+- Folge-Dry-Run nach dem Apply: `energyCorrections=0`, `meterOrderGate=passed`, `meterChainGate=passed`.
+- `maxKw` und `dauerGesamt` wurden aus data.v3 rückwirkend ergänzt; `date`, `time`, `snap` und `energyPrice` blieben unverändert.
 
 **GitHub Secrets (Settings → Secrets → Actions):**
 - `GOE_SERIAL` — 6-stellige Seriennummer
@@ -189,8 +200,8 @@ Stattdessen: Balken je Monat mit dem höchsten `maxKw`, dazu eine gestrichelte
 Linie bei `PEAK_THRESHOLD_KW = 10` (Staffelgrenze der SNE-G-V auf Netzebene 7).
 Balken darüber rot, darunter grün. Badge zählt die Monate über der Schwelle.
 
-- Monate ohne jeden `maxKw`-Wert zeigen `—` und einen Stummel-Balken – **nicht** 0.
-  Ein Peak von 0 wäre eine Falschaussage, kein fehlender Wert.
+- Der aktuell reconciliierte Bestand hat für alle 23 Sessions einen `maxKw`-Wert; ein Monat ohne jeden Peak tritt derzeit nicht mehr auf.
+  Der Rendering-Fallback bleibt trotzdem korrekt: fehlen bei zukünftigen Daten sämtliche Peaks, zeigt der Monat `—` statt 0.
 - Monate mit teilweise fehlenden Werten bekommen ein `*` am Wert plus Fussnote.
 - Skala geht immer bis mindestens 11 kW, damit die 10-kW-Linie nicht am Rand klebt.
 - Die Schwellenlinie endet 34 px vor dem rechten Rand; dort sitzt ihre Beschriftung,
