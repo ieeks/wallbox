@@ -18,7 +18,7 @@ sehen Nutzer nach einem Deploy noch die alte Version.
 
 ---
 
-## Aktuelle Version: 1.17.0
+## Aktuelle Version: 1.18.0
 
 ---
 
@@ -183,6 +183,30 @@ kWh, `maxKw`, Kosten) plus eine Fusszeile mit der höchsten Ladeleistung des Mon
 - Der Monats-Peak ist das Maximum über `c.maxKw > 0`; Einträge ohne Wert zeigen `—`
   und werden nicht als 0 gewertet.
 - Die Zeile ist per `role="button"` + `tabindex` + Enter/Space auch ohne Maus bedienbar.
+- Ab v1.18.0 sind auch die Einzelladungen antippbar (→ `showDetail`), gleiches Muster.
+  Darüber erreicht man ältere Ladungen, seit „Alle Einträge" gekürzt ist (s. u.).
+
+---
+
+## Gekürzte Eintragsliste + Detailseite (ab v1.18.0)
+
+In Jahr/Gesamt stand jede Ladung zweimal auf der Seite: im Monatsverlauf und noch
+einmal flach in „Alle Einträge" – bei inzwischen Dutzenden Einträgen scrollt man ewig.
+
+- In Jahr/Gesamt zeigt die Liste nur die jüngsten `HISTORY_LIMIT = 10` Einträge,
+  Titel „Letzte Einträge", darunter „Alle N anzeigen" (umschaltbar). Im Monatsmodus
+  bleibt die volle Liste – dort ist sie kurz und der Monatsverlauf fehlt.
+- `historyShowAll` ist eine Modul-Variable und wird in `setPeriod()` zurückgesetzt.
+  Reine Ansicht, deshalb weder in `settings` noch in localStorage.
+- Ältere Ladungen: Monat im Monatsverlauf aufklappen, Zeile antippen → Detailseite.
+- Die Detailseite hat neben Bearbeiten jetzt auch **Löschen** (gleicher Bestätigungsdialog
+  `askDelete`/`confirmDelete`). Nach dem Löschen geht es zurück zum Dashboard.
+- Bearbeiten auf der Detailseite baut sie danach neu auf (`saveEdit` → `showDetail`),
+  vorher zeigte sie bis zum Verlassen die alten Werte.
+- `detailReturnY`: `showDetail()` merkt sich die Dashboard-Scrollposition und springt
+  nach oben; `closeDetail()` (Zurück-Knopf, nach Löschen) stellt sie wieder her. Vorher
+  öffnete die Detailseite ganz unten (Scrollposition des längeren Dashboards, geklemmt)
+  und „Zurück" landete ganz oben. Der Neuaufbau nach Bearbeiten überschreibt sie nicht.
 
 ---
 
