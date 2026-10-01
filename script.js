@@ -779,6 +779,17 @@ function saveCharge() {
 // =====================================================================
 // DASHBOARD
 // =====================================================================
+// „Alle Einträge“ zeigt in Jahr/Gesamt nur die jüngsten Ladungen; die volle
+// Liste steht ohnehin schon im Monatsverlauf. Aufgeklappt bleibt sie bis zum
+// Zeitraumwechsel – reiner Ansichtszustand, deshalb weder in settings noch in localStorage.
+const HISTORY_LIMIT = 10;
+let historyShowAll = false;
+
+function toggleHistoryAll() {
+  historyShowAll = !historyShowAll;
+  refreshDashboard();
+}
+
 function refreshDashboard() {
   const now = new Date();
   let filtered = charges;
@@ -835,10 +846,15 @@ function refreshDashboard() {
     lcArea.innerHTML = '<div class="empty-state"><span class="material-symbols-outlined">electric_car</span>Noch keine Ladevorgänge erfasst.</div>';
   }
 
-  // History list
+  // History list – in Jahr/Gesamt nur die letzten HISTORY_LIMIT, ältere über
+  // „Alle anzeigen“ oder den Monatsverlauf (dort sind die Zeilen antippbar).
   const hlArea = document.getElementById('history-list');
+  const canLimit = currentPeriod !== 'month' && filtered.length > HISTORY_LIMIT;
+  const shown = canLimit && !historyShowAll ? filtered.slice(0, HISTORY_LIMIT) : filtered;
+  document.getElementById('history-title').textContent =
+    shown.length < filtered.length ? 'Letzte Einträge' : 'Alle Einträge';
   if(filtered.length > 0) {
-    hlArea.innerHTML = filtered.map(c => `
+    hlArea.innerHTML = shown.map(c => `
       <div class="history-item-wrap" id="wrap-${c.id}">
         <div class="hi-delete-bg" onclick="askDelete('${c.id}', ${c.kwh}, '${c.date}')">
           <span class="material-symbols-outlined" style="font-size:20px;">delete</span>
@@ -869,10 +885,13 @@ function refreshDashboard() {
           </div>
         </div>
       </div>
-    `).join('');
+    `).join('') + (canLimit ? `
+      <button class="history-more" onclick="toggleHistoryAll()">
+        ${historyShowAll ? `Nur die letzten ${HISTORY_LIMIT} anzeigen` : `Alle ${filtered.length} anzeigen`}
+      </button>` : '');
 
     // Init swipe on all items
-    filtered.forEach(c => initSwipe(c.id));
+    shown.forEach(c => initSwipe(c.id));
   } else {
     hlArea.innerHTML = '<div class="empty-state" style="padding:24px;">Keine Einträge im gewählten Zeitraum.</div>';
   }
@@ -928,7 +947,9 @@ function confirmDelete() {
   setTimeout(() => {
     charges = charges.filter(c => c.id !== deletedId);
     persist();
-    refreshDashboard();
+    // Von der Detailseite aus gelöscht → zurück, sonst zeigt sie eine Ladung, die es nicht mehr gibt
+    if(document.getElementById('page-detail').classList.contains('active')) closeDetail();
+    else refreshDashboard();
     showToast('Eintrag gelöscht');
   }, 350);
 }
@@ -1070,6 +1091,7 @@ function renderInsights() {
 
 function setPeriod(p, btn) {
   currentPeriod = p;
+  historyShowAll = false;
   document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   refreshDashboard();
@@ -2056,9 +2078,21 @@ function renderAmortisation() {
 // =====================================================================
 // DETAIL PAGE
 // =====================================================================
+// Scrollposition des Dashboards beim Öffnen der Detailseite. Ohne sie landet man
+// auf der (kürzeren) Detailseite ganz unten und nach „Zurück“ wieder ganz oben.
+let detailReturnY = 0;
+
+function closeDetail() {
+  showPage('dashboard');
+  window.scrollTo(0, detailReturnY);
+}
+
 function showDetail(id) {
   const c = charges.find(ch => ch.id === id);
   if (!c) return;
+  // Erneuter Aufruf nach „Bearbeiten“ kommt von der Detailseite selbst – Rücksprung dann nicht überschreiben
+  const reopen = document.getElementById('page-detail').classList.contains('active');
+  if (!reopen) detailReturnY = window.scrollY;
 
   function fmtDauer(dauer) {
     if (!dauer) return null;
@@ -2147,12 +2181,15 @@ function showDetail(id) {
 
   document.getElementById('page-detail').innerHTML = `
     <div class="detail-header">
-      <button class="detail-back" onclick="showPage('dashboard')" aria-label="Zurück">
+      <button class="detail-back" onclick="closeDetail()" aria-label="Zurück">
         <span class="material-symbols-outlined">arrow_back</span>
       </button>
       <div class="detail-title">Ladevorgang</div>
       <button class="detail-back" onclick="openEdit('${c.id}')" aria-label="Bearbeiten" style="margin-left:auto;">
         <span class="material-symbols-outlined">edit</span>
+      </button>
+      <button class="detail-back detail-del" onclick="askDelete('${c.id}', ${c.kwh}, '${c.date}')" aria-label="Löschen">
+        <span class="material-symbols-outlined">delete</span>
       </button>
     </div>
 
@@ -2192,6 +2229,7 @@ function showDetail(id) {
   `;
 
   showPage('detail');
+  if (!reopen) window.scrollTo(0, 0);
 }
 
 // =====================================================================
@@ -2246,9 +2284,12 @@ function saveEdit() {
   };
   charges.sort((a, b) => b.date.localeCompare(a.date));
   persist();
+  const id = editingId;
   closeEdit();
   showToast('Ladevorgang aktualisiert');
   refreshDashboard();
+  // Aus der Detailseite heraus bearbeitet → die neu aufbauen, sonst zeigt sie die alten Werte
+  if (document.getElementById('page-detail').classList.contains('active')) showDetail(id);
 }
 
 // =====================================================================
@@ -2303,7 +2344,8 @@ function renderMonthStats() {
       <div class="month-detail">
         ${m.items.slice().sort((a, b) =>
             (b.date + (b.time || '')).localeCompare(a.date + (a.time || ''))).map(c => `
-          <div class="md-row">
+          <div class="md-row" role="button" tabindex="0" onclick="showDetail('${c.id}')"
+               onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showDetail('${c.id}');}">
             <span class="md-date">${fmtDateShort(c.date)}${c.time ? ' · ' + c.time : ''}${c.snap ? ' ☀️' : ''}</span>
             <span class="md-kwh">${fmt(c.kwh, 1)} kWh</span>
             <span class="md-peak">${c.maxKw > 0 ? fmt(c.maxKw, 2) + ' kW' : '—'}</span>

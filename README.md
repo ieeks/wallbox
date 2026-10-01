@@ -50,7 +50,8 @@ Quelle: [E-Control](https://www.e-control.at/sommer-nieder-arbeitspreis). Wird a
 
 ## Detailseite
 
-Klick auf einen Eintrag in „Alle Einträge" öffnet die Detailseite mit:
+Klick auf einen Eintrag in „Letzte/Alle Einträge" oder auf eine Einzelladung im
+aufgeklappten Monatsverlauf öffnet die Detailseite (oben rechts: Bearbeiten, Löschen) mit:
 
 - **Übersicht** – Datum/Uhrzeit, kWh, aktive Ladezeit (z. B. `6h 39min`), Max. Leistung, SNAP-Badge
 - **Kostenaufschlüsselung** – identischer Breakdown wie auf der Eingabeseite (Energie, Netz, GAB, USt, Brutto)

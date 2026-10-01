@@ -535,6 +535,16 @@ html[data-theme="dark"] .period-btn.active {
 .hi-del:hover { background:var(--primary); color:#fff; }
 .hi-del:active { transform:scale(0.9); }
 
+/* „Alle N anzeigen“ unter der gekürzten Liste */
+.history-more {
+  width:100%; padding:12px; margin-top:8px; cursor:pointer;
+  background:var(--surface); border:1px solid var(--border); border-radius:12px;
+  color:var(--text-secondary); font-size:13px; font-family:'Inter'; font-weight:600;
+  transition: all 0.2s;
+}
+.history-more:hover { border-color:var(--border-focus); color:var(--text); }
+.history-more:active { transform:scale(0.98); }
+
 /* Confirm delete modal */
 .confirm-overlay {
   display:none; position:fixed; inset:0; background:var(--modal-scrim);
@@ -919,6 +929,7 @@ nav {
 }
 .detail-back:hover { background: var(--surface-high); }
 .detail-back:active { transform: scale(0.9); }
+.detail-del { color: var(--primary); }
 .detail-title {
   font-family: 'Manrope';
   font-weight: 800;
@@ -978,6 +989,11 @@ nav {
   font-variant-numeric: tabular-nums;
 }
 .md-row + .md-row { border-top: 1px solid var(--border); }
+/* Antippen öffnet die Detailseite (Bearbeiten/Löschen) */
+.md-row { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.md-row:hover .md-date, .md-row:hover .md-cost { color: var(--text); }
+.md-row:active { opacity: 0.6; }
+.md-row:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 4px; }
 .md-date { flex: 1; min-width: 0; color: var(--text-secondary); white-space: nowrap; }
 .md-kwh { color: var(--text-secondary); white-space: nowrap; }
 .md-peak { color: var(--text-muted); white-space: nowrap; min-width: 62px; text-align: right; }
